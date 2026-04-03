@@ -23,7 +23,7 @@ export const FacultyReportsScreen: React.FC<FacultyReportsProps> = ({ onNavigate
     id: String(authUser?.id || ''), 
     name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', 
     email: authUser?.email || '', 
-    role: 'faculty' 
+    role: (authUser?.role as any) || 'faculty' 
   };
 
   useEffect(() => {
@@ -85,7 +85,7 @@ export const FacultyReportsScreen: React.FC<FacultyReportsProps> = ({ onNavigate
                 <input 
                     type="text" 
                     placeholder="Search subjects or examination codes..." 
-                    value={searchQuery}
+                    value={searchQuery || ''}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className="w-full pl-16 pr-8 py-5 bg-white border border-slate-200 rounded-[1.8rem] text-sm font-bold focus:outline-none focus:ring-4 focus:ring-indigo-100/50 transition-all shadow-sm"
                 />

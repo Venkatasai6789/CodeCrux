@@ -28,7 +28,7 @@ export const ExamAnalyticsScreen: React.FC<ExamAnalyticsProps> = ({ onNavigate }
     id: String(authUser?.id || ''), 
     name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', 
     email: authUser?.email || '', 
-    role: 'faculty' 
+    role: (authUser?.role as any) || 'faculty' 
   };
 
   useEffect(() => {
@@ -208,7 +208,7 @@ export const ExamAnalyticsScreen: React.FC<ExamAnalyticsProps> = ({ onNavigate }
                         <input 
                             type="text" 
                             placeholder="Identify student..." 
-                            value={searchQuery}
+                            value={searchQuery || ''}
                             onChange={(e) => setSearchQuery(e.target.value)}
                             className="pl-12 pr-6 py-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm font-medium focus:outline-none focus:border-indigo-500 w-full md:w-72 transition-all"
                         />

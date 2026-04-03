@@ -293,10 +293,20 @@ class ExamViewSet(viewsets.ModelViewSet):
     def my_exams(self, request):
         """Get exams for current user."""
         if request.user.role in ['instructor', 'admin']:
-            exams = Exam.objects.filter(instructor=request.user)
+            if request.user.role == 'admin':
+                exams = Exam.objects.all().order_by('-created_at')
+            else:
+                exams = Exam.objects.filter(instructor=request.user).order_by('-created_at')
         else:
-            exams = Exam.objects.filter(enrollments__student=request.user).distinct()
-        serializer = ExamListSerializer(exams, many=True)
+            # For students: 
+            # 1. Any exam they are enrolled in (including past ones)
+            # 2. Any published/active exam that hasn't ended yet (available for enrollment)
+            now = timezone.now()
+            exams = Exam.objects.filter(
+                Q(enrollments__student=request.user) | 
+                Q(status__in=['published', 'active'], end_time__gt=now)
+            ).distinct()
+        serializer = ExamListSerializer(exams, many=True, context={'request': request})
         return Response(serializer.data)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
@@ -339,7 +349,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'class_average': round(avg_score, 1),
                 'total_exams': exams.count(),
                 'performance_trend': performance_trend,
-                'upcoming_exams': ExamListSerializer(upcoming_exams, many=True).data,
+                'upcoming_exams': ExamListSerializer(upcoming_exams, many=True, context={'request': request}).data,
                 'recent_submissions': ExamEnrollmentSerializer(recent_submissions, many=True).data,
             })
         else:
@@ -354,7 +364,7 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'enrolled_exams': enrollments.count(),
                 'completed_exams': enrollments.filter(status__in=['submitted', 'completed']).count(),
                 'average_score': round(avg_score, 1),
-                'upcoming_exams': ExamListSerializer(upcoming, many=True).data,
+                'upcoming_exams': ExamListSerializer(upcoming, many=True, context={'request': request}).data,
             })
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
@@ -495,6 +505,16 @@ class ExamViewSet(viewsets.ModelViewSet):
                     end_time = start_time + timedelta(minutes=duration_minutes)
 
                 # 2. Create Exam
+                try:
+                    total_marks = float(data.get('total_marks', 100))
+                except (TypeError, ValueError):
+                    total_marks = 100.0
+                    
+                try:
+                    passing_marks = float(data.get('passing_marks', 40))
+                except (TypeError, ValueError):
+                    passing_marks = 40.0
+
                 exam = Exam.objects.create(
                     title=data.get('title', 'Untitled Exam'),
                     description=data.get('description', ''),
@@ -505,20 +525,25 @@ class ExamViewSet(viewsets.ModelViewSet):
                     end_time=end_time,
                     duration_minutes=duration_minutes,
                     status=data.get('status', 'published'),
-                    total_marks=float(data.get('total_marks', 100)),
-                    passing_marks=float(data.get('passing_marks', 40))
+                    total_marks=total_marks,
+                    passing_marks=passing_marks
                 )
 
                 # 2. Process Questions
                 questions_data = data.get('questions', [])
                 for idx, q_data in enumerate(questions_data):
                     q_type = q_data.get('type', 'mcq')
+                    try:
+                        q_marks = float(q_data.get('points', 1))
+                    except (TypeError, ValueError):
+                        q_marks = 1.0
+
                     question = Question.objects.create(
                         exam=exam,
                         question_type=q_type,
                         title=f"Question {idx + 1}",
                         description=q_data.get('text', ''),
-                        marks=float(q_data.get('points', 1)),
+                        marks=q_marks,
                         order=idx
                     )
 

@@ -22,7 +22,12 @@ type Step = 'details' | 'source' | 'editor' | 'settings';
 
 export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNavigate }) => {
   const { user: authUser } = useAuth();
-  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
+  const facultyUser: User = { 
+    id: String(authUser?.id || ''), 
+    name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', 
+    email: authUser?.email || '', 
+    role: (authUser?.role as any) || 'faculty' 
+  };
   
   const [currentStep, setCurrentStep] = useState(1);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
