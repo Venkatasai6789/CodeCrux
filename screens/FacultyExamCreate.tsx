@@ -9,8 +9,9 @@ import { Button } from '../components/ui/Button';
 import { 
   ChevronRight, ChevronLeft, Check, Plus, Trash2, GripVertical, 
   Youtube, Calendar, Clock, Eye, Sparkles, Save, FileText,
-  Code, Type, List, Wand2, Loader2, ArrowRight, ChevronDown, X
+  Code, Type, List, Wand2, Loader2, ArrowRight, ChevronDown, X, AlertTriangle
 } from 'lucide-react';
+import { examsAPI } from '../services/apiService';
 
 interface FacultyExamCreateProps {
   onNavigate: (path: string) => void;
@@ -30,31 +31,178 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
   // --- Form State ---
   const [details, setDetails] = useState({
     title: '',
-    course: '',
+    courseId: '',
+    courseName: '',
     duration: 60,
     startDate: '',
+    startTime: '10:00',
+    totalMarks: 100,
+    passingMarks: 40
   });
 
   const [aiConfig, setAiConfig] = useState({
-    sourceType: 'manual', // 'manual' | 'youtube'
+    sourceType: 'manual' as 'manual' | 'youtube',
     youtubeUrl: '',
     difficulty: 'Intermediate',
     questionCount: 5,
     includeCoding: true
   });
 
-  // Default Questions (will be overwritten by AI)
-  const [questions, setQuestions] = useState<ExamQuestion[]>([
-    { 
-      id: 'q1', 
-      type: 'mcq', 
-      text: 'Sample Question', 
-      points: 5, 
-      options: [{ id: 'o1', text: 'Option A', isCorrect: false }, { id: 'o2', text: 'Option B', isCorrect: true }] 
-    }
-  ]);
+  const [questions, setQuestions] = useState<ExamQuestion[]>([]);
 
-  // --- Handlers ---
+  // --- Question Handlers ---
+
+  const addManualQuestion = (type: 'mcq' | 'coding') => {
+    const newQuestion: ExamQuestion = {
+        id: `q_${Date.now()}`,
+        type,
+        text: '',
+        points: 5,
+        ...(type === 'mcq' ? { 
+            options: [
+                { id: `opt_${Date.now()}_1`, text: 'Option 1', isCorrect: true },
+                { id: `opt_${Date.now()}_2`, text: 'Option 2', isCorrect: false }
+            ] 
+        } : {
+            language: 'python',
+            starterCode: '# write your code here',
+            testCases: [
+                { id: `tc_${Date.now()}_1`, input: '', output: '', isHidden: false }
+            ]
+        })
+    };
+    setQuestions(prev => [...prev, newQuestion]);
+  };
+
+  const updateQuestion = (id: string, updates: Partial<ExamQuestion>) => {
+    setQuestions(prev => prev.map(q => q.id === id ? { ...q, ...updates } : q));
+  };
+
+  const deleteQuestion = (id: string) => {
+    setQuestions(prev => prev.filter(q => q.id !== id));
+  };
+
+  // --- MCQ Option Handlers ---
+
+  const addOption = (questionId: string) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.options) {
+            return {
+                ...q,
+                options: [...q.options, { id: `opt_${Date.now()}`, text: '', isCorrect: false }]
+            };
+        }
+        return q;
+    }));
+  };
+
+  const updateOption = (questionId: string, optionId: string, updates: Partial<{text: string; isCorrect: boolean}>) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.options) {
+            return {
+                ...q,
+                options: q.options.map(opt => {
+                    if (opt.id === optionId) {
+                        return { ...opt, ...updates };
+                    }
+                    // Only one correct option for now
+                    if (updates.isCorrect === true) {
+                        return { ...opt, isCorrect: false };
+                    }
+                    return opt;
+                })
+            };
+        }
+        return q;
+    }));
+  };
+
+  const deleteOption = (questionId: string, optionId: string) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.options) {
+            return {
+                ...q,
+                options: q.options.filter(opt => opt.id !== optionId)
+            };
+        }
+        return q;
+    }));
+  };
+
+  // --- Coding Test Case Handlers ---
+
+  const addTestCase = (questionId: string) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.testCases) {
+            return {
+                ...q,
+                testCases: [...q.testCases, { id: `tc_${Date.now()}`, input: '', output: '', isHidden: false }]
+            };
+        }
+        return q;
+    }));
+  };
+
+  const updateTestCase = (questionId: string, testCaseId: string, updates: Partial<{input: string; output: string; isHidden: boolean}>) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.testCases) {
+            return {
+                ...q,
+                testCases: q.testCases.map(tc => tc.id === testCaseId ? { ...tc, ...updates } : tc)
+            };
+        }
+        return q;
+    }));
+  };
+
+  const deleteTestCase = (questionId: string, testCaseId: string) => {
+    setQuestions(prev => prev.map(q => {
+        if (q.id === questionId && q.testCases) {
+            return {
+                ...q,
+                testCases: q.testCases.filter(tc => tc.id !== testCaseId)
+            };
+        }
+        return q;
+    }));
+  };
+
+  const [isPublishing, setIsPublishing] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+
+  const handlePublishExam = async () => {
+    if (!details.title || !details.startDate) {
+        setErrorMsg('Please fill in exam title and date.');
+        return;
+    }
+    if (questions.length === 0) {
+        setErrorMsg('Please add at least one question.');
+        return;
+    }
+
+    setIsPublishing(true);
+    setErrorMsg('');
+
+    try {
+        const payload = {
+            title: details.title,
+            course_id: null, // Would normally come from dropdown
+            course_name: details.courseName,
+            start_time: `${details.startDate}T${details.startTime}:00Z`,
+            duration_minutes: details.duration,
+            total_marks: questions.reduce((sum, q) => sum + (q.points || 0), 0),
+            passing_marks: details.passingMarks,
+            questions: questions
+        };
+
+        await examsAPI.createFromScratch(payload);
+        onNavigate('/faculty-exams');
+    } catch (err: any) {
+        setErrorMsg(err.message || 'Failed to publish exam');
+    } finally {
+        setIsPublishing(false);
+    }
+  };
 
   const handleNext = () => {
     if (currentStep < 4) setCurrentStep(c => c + 1);
@@ -167,7 +315,7 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
             {/* STEP 1: DETAILS */}
             {currentStep === 1 && (
                 <div className="max-w-xl mx-auto bg-white p-8 rounded-2xl border border-slate-200 shadow-sm animate-fade-in">
-                    <h2 className="text-xl font-bold text-slate-900 mb-6">Exam Details</h2>
+                    <h2 className="text-xl font-bold text-slate-900 mb-6 font-primary">Exam Details</h2>
                     <div className="space-y-6">
                         <Input 
                             label="Exam Title" 
@@ -176,27 +324,45 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
                             onChange={(e) => setDetails({...details, title: e.target.value})}
                         />
                         <div>
-                            <label className="block text-xs font-medium text-slate-900 mb-1.5">Course</label>
-                            <select 
-                                className="w-full h-12 px-3 bg-white border border-slate-200 border-b-2 rounded-none text-slate-900 focus:outline-none focus:border-indigo-600"
-                                value={details.course}
-                                onChange={(e) => setDetails({...details, course: e.target.value})}
-                            >
-                                <option value="">Select a course...</option>
-                                <option value="cs101">CS101: Intro to Programming</option>
-                                <option value="cs302">CS302: Algorithms</option>
-                            </select>
+                            <label className="block text-xs font-medium text-slate-900 mb-1.5 uppercase tracking-wider">Course / Subject</label>
+                            <Input 
+                                placeholder="e.g. Computer Science 101"
+                                value={details.courseName}
+                                onChange={(e) => setDetails({...details, courseName: e.target.value})}
+                            />
                         </div>
-                        <div className="grid grid-cols-2 gap-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                                <label className="block text-xs font-medium text-slate-900 mb-1.5">Date</label>
-                                <input type="date" className="w-full h-12 bg-transparent border-b border-slate-200 focus:border-indigo-600 outline-none" />
+                                <label className="block text-xs font-medium text-slate-900 mb-1.5 uppercase tracking-wider">Start Date</label>
+                                <input 
+                                    type="date" 
+                                    className="w-full h-12 bg-transparent border-b border-slate-200 focus:border-indigo-600 outline-none transition-all duration-300"
+                                    value={details.startDate}
+                                    onChange={(e) => setDetails({...details, startDate: e.target.value})}
+                                />
                             </div>
+                            <div>
+                                <label className="block text-xs font-medium text-slate-900 mb-1.5 uppercase tracking-wider">Start Time</label>
+                                <input 
+                                    type="time" 
+                                    className="w-full h-12 bg-transparent border-b border-slate-200 focus:border-indigo-600 outline-none transition-all duration-300"
+                                    value={details.startTime}
+                                    onChange={(e) => setDetails({...details, startTime: e.target.value})}
+                                />
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <Input 
                                 label="Duration (Minutes)" 
                                 type="number" 
                                 value={details.duration} 
-                                onChange={(e) => setDetails({...details, duration: parseInt(e.target.value)})} 
+                                onChange={(e) => setDetails({...details, duration: parseInt(e.target.value) || 0})} 
+                            />
+                            <Input 
+                                label="Total Marks" 
+                                type="number" 
+                                value={details.totalMarks} 
+                                onChange={(e) => setDetails({...details, totalMarks: parseInt(e.target.value) || 0})} 
                             />
                         </div>
                     </div>
@@ -307,16 +473,53 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
             {/* STEP 3: EDITOR */}
             {currentStep === 3 && (
                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-                    <div className="flex justify-between items-center">
-                        <h2 className="text-xl font-bold text-slate-900">Review Questions</h2>
-                        <button className="text-sm font-bold text-indigo-600 hover:bg-indigo-50 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-2">
-                            <Plus className="w-4 h-4" /> Add Manual Question
-                        </button>
+                    <div className="flex justify-between items-center mb-4">
+                        <h2 className="text-xl font-bold text-slate-900">Question Builder</h2>
+                        <div className="flex gap-3">
+                            <button 
+                                onClick={() => addManualQuestion('mcq')}
+                                className="text-xs font-bold bg-white text-indigo-600 border border-indigo-100 hover:bg-slate-50 px-4 py-2 rounded-xl transition-all flex items-center gap-2"
+                            >
+                                <List className="w-4 h-4" /> + MCQ
+                            </button>
+                            <button 
+                                onClick={() => addManualQuestion('coding')}
+                                className="text-xs font-bold bg-indigo-600 text-white hover:bg-indigo-700 px-4 py-2 rounded-xl shadow-[0_4px_12px_rgba(79,70,229,0.2)] transition-all flex items-center gap-2"
+                            >
+                                <Code className="w-4 h-4" /> + Coding
+                            </button>
+                        </div>
                     </div>
 
-                    {questions.map((q, idx) => (
-                        <QuestionEditorCard key={q.id} question={q} index={idx} onDelete={() => {}} />
-                    ))}
+                    {questions.length === 0 ? (
+                        <div className="bg-slate-50 border-2 border-dashed border-slate-200 rounded-3xl p-20 text-center">
+                            <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mx-auto mb-4 border border-slate-100">
+                                <Plus className="w-8 h-8 text-slate-300" />
+                            </div>
+                            <h3 className="text-slate-900 font-bold text-lg">No questions added yet</h3>
+                            <p className="text-slate-500 text-sm mt-1 max-w-xs mx-auto">Use AI to generate content or add questions manually using the buttons above.</p>
+                        </div>
+                    ) : (
+                        <div className="space-y-6 pb-12">
+                            {questions.map((q, idx) => (
+                                <QuestionEditorCard 
+                                    key={q.id} 
+                                    question={q} 
+                                    index={idx} 
+                                    onDelete={() => deleteQuestion(q.id)}
+                                    onUpdate={(updates) => updateQuestion(q.id, updates)}
+                                    // MCQ Option Props
+                                    onAddOption={() => addOption(q.id)}
+                                    onUpdateOption={(optId, upd) => updateOption(q.id, optId, upd)}
+                                    onDeleteOption={(optId) => deleteOption(q.id, optId)}
+                                    // Coding Props
+                                    onAddTestCase={() => addTestCase(q.id)}
+                                    onUpdateTestCase={(tcId, upd) => updateTestCase(q.id, tcId, upd)}
+                                    onDeleteTestCase={(tcId) => deleteTestCase(q.id, tcId)}
+                                />
+                            ))}
+                        </div>
+                    )}
                 </div>
             )}
 
@@ -340,18 +543,29 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
         {/* Footer Actions */}
         <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-4 md:pl-64 z-30 shadow-[0_-4px_20px_rgba(0,0,0,0.05)]">
             <div className="max-w-5xl mx-auto flex justify-between items-center">
-                <Button 
-                    variant="secondary" 
-                    onClick={handlePrev} 
-                    disabled={currentStep === 1 || isProcessingAI}
-                    className="w-auto px-6 border-slate-300 text-slate-600 hover:bg-slate-50"
-                >
-                    <ChevronLeft className="w-4 h-4 mr-2" /> Back
-                </Button>
+                <div className="flex items-center gap-4">
+                    <Button 
+                        variant="secondary" 
+                        onClick={handlePrev} 
+                        disabled={currentStep === 1 || isProcessingAI || isPublishing}
+                        className="w-auto px-6 border-slate-300 text-slate-600 hover:bg-slate-50"
+                    >
+                        <ChevronLeft className="w-4 h-4 mr-2" /> Back
+                    </Button>
+                    {errorMsg && (
+                        <div className="flex items-center gap-2 px-4 py-2 bg-red-50 text-red-600 rounded-lg text-xs font-bold animate-shake">
+                            <AlertTriangle className="w-4 h-4" /> {errorMsg}
+                        </div>
+                    )}
+                </div>
                 
                 {currentStep === 4 ? (
-                    <Button onClick={() => onNavigate('/faculty-exams')} className="w-auto px-8 bg-green-600 hover:bg-green-700 shadow-green-500/30">
-                        Publish Exam
+                    <Button 
+                        onClick={handlePublishExam} 
+                        isLoading={isPublishing}
+                        className="w-auto px-10 bg-indigo-600 hover:bg-indigo-700 shadow-[0_8px_20px_rgba(79,70,229,0.3)] font-bold transition-all hover:-translate-y-1 active:translate-y-0"
+                    >
+                        Publish Exam <Check className="w-4 h-4 ml-2" />
                     </Button>
                 ) : (
                     currentStep === 2 && aiConfig.sourceType === 'youtube' ? (
@@ -364,7 +578,7 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
                             Analyze & Generate <Wand2 className="w-4 h-4 ml-2" />
                         </Button>
                     ) : (
-                        <Button onClick={handleNext} className="w-auto px-8">
+                        <Button onClick={handleNext} className="w-auto px-8 font-bold">
                             Next Step <ArrowRight className="w-4 h-4 ml-2" />
                         </Button>
                     )
@@ -378,75 +592,181 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
 };
 
 // --- Sub-Component: Question Editor Card ---
-const QuestionEditorCard: React.FC<{ question: ExamQuestion, index: number, onDelete: () => void }> = ({ question, index, onDelete }) => {
+interface QuestionEditorCardProps {
+    question: ExamQuestion;
+    index: number;
+    onDelete: () => void;
+    onUpdate: (updates: Partial<ExamQuestion>) => void;
+    onAddOption: () => void;
+    onUpdateOption: (id: string, updates: Partial<{text: string; isCorrect: boolean}>) => void;
+    onDeleteOption: (id: string) => void;
+    onAddTestCase: () => void;
+    onUpdateTestCase: (id: string, updates: Partial<{input: string; output: string; isHidden: boolean}>) => void;
+    onDeleteTestCase: (id: string) => void;
+}
+
+const QuestionEditorCard: React.FC<QuestionEditorCardProps> = ({ 
+    question, index, onDelete, onUpdate, 
+    onAddOption, onUpdateOption, onDeleteOption,
+    onAddTestCase, onUpdateTestCase, onDeleteTestCase
+}) => {
     const [isExpanded, setIsExpanded] = useState(true);
 
     return (
-        <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden group hover:border-indigo-300 transition-all">
+        <div className="bg-white rounded-3xl border border-slate-200 shadow-[0_2px_15px_rgba(0,0,0,0.03)] overflow-hidden group hover:border-indigo-200 hover:shadow-[0_8px_30px_rgba(0,0,0,0.06)] transition-all duration-500">
             {/* Card Header */}
-            <div className="bg-slate-50 px-4 py-3 flex items-center justify-between border-b border-slate-200">
-                <div className="flex items-center gap-3">
-                    <span className="bg-white border border-slate-200 text-slate-500 font-mono font-bold text-xs px-2 py-1 rounded">Q{index + 1}</span>
-                    <span className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${question.type === 'coding' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
-                        {question.type}
-                    </span>
-                    <span className="text-xs font-bold text-slate-400">{question.points} pts</span>
+            <div className={`bg-slate-50/80 px-6 py-4 flex items-center justify-between border-b border-slate-100 transition-colors ${isExpanded ? 'bg-white' : ''}`}>
+                <div className="flex items-center gap-4">
+                    <div className="w-8 h-8 flex items-center justify-center bg-slate-900 text-white rounded-lg text-xs font-bold font-mono">Q{index + 1}</div>
+                    <div className="flex flex-col">
+                        <div className="flex items-center gap-2">
+                            <span className={`text-[10px] font-bold uppercase tracking-widest px-2 py-0.5 rounded-full ${question.type === 'coding' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-200 text-slate-600'}`}>
+                                {question.type}
+                            </span>
+                            <span className="text-sm font-bold text-slate-900 truncate max-w-[300px]">
+                                {question.text || <span className="text-slate-400 font-normal italic">Enter question text...</span>}
+                            </span>
+                        </div>
+                    </div>
                 </div>
-                <div className="flex gap-2">
-                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-1.5 hover:bg-white rounded text-slate-400 hover:text-slate-700"><ChevronDown className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} /></button>
-                    <button onClick={onDelete} className="p-1.5 hover:bg-red-50 rounded text-slate-400 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
+                <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1 bg-white border border-slate-200 rounded-lg px-2 py-1">
+                        <Input 
+                            type="number" 
+                            className="w-10 border-none h-6 p-0 text-center text-xs font-bold bg-transparent" 
+                            value={question.points} 
+                            onChange={(e) => onUpdate({ points: parseInt(e.target.value) || 0 })}
+                        />
+                        <span className="text-[10px] font-bold text-slate-400 uppercase">pts</span>
+                    </div>
+                    <div className="w-px h-6 bg-slate-200 mx-1"></div>
+                    <button onClick={() => setIsExpanded(!isExpanded)} className="p-2 hover:bg-white rounded-xl text-slate-400 hover:text-slate-900 transition-all shadow-sm">
+                        <ChevronDown className={`w-4 h-4 transition-transform duration-500 ${isExpanded ? 'rotate-180' : ''}`} />
+                    </button>
+                    <button onClick={onDelete} className="p-2 hover:bg-red-50 rounded-xl text-slate-400 hover:text-red-500 transition-all">
+                        <Trash2 className="w-4 h-4" />
+                    </button>
                 </div>
             </div>
 
             {/* Expanded Editor */}
             {isExpanded && (
-                <div className="p-6 space-y-4">
+                <div className="p-8 space-y-8 animate-fade-in">
                     <div>
-                        <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Problem Statement</label>
+                        <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+                             <Type className="w-3 h-3 text-indigo-500" /> Problem Statement
+                        </label>
                         <textarea 
-                            className="w-full p-3 bg-white border border-slate-200 rounded-lg text-sm focus:outline-none focus:border-indigo-500 min-h-[80px]"
-                            defaultValue={question.text}
+                            className="w-full p-4 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:border-indigo-500 focus:bg-white min-h-[100px] transition-all resize-none leading-relaxed"
+                            placeholder="Type your question here..."
+                            value={question.text}
+                            onChange={(e) => onUpdate({ text: e.target.value })}
                         />
                     </div>
 
                     {/* Coding Specifics */}
                     {question.type === 'coding' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Starter Code</label>
-                                <textarea 
-                                    className="w-full p-3 bg-[#1e293b] text-indigo-100 font-mono text-xs rounded-lg min-h-[150px] border border-slate-700 focus:outline-none focus:border-indigo-500"
-                                    defaultValue={question.starterCode}
-                                />
-                            </div>
-                            <div className="space-y-4">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Constraints</label>
-                                    <Input defaultValue={question.constraints} className="text-sm" />
-                                </div>
+                        <div className="space-y-8 pt-2">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
                                 <div>
                                     <div className="flex justify-between items-center mb-2">
-                                        <label className="block text-xs font-bold text-slate-700 uppercase">Test Cases</label>
-                                        <button className="text-[10px] font-bold text-indigo-600 hover:underline">+ Add Case</button>
+                                        <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest flex items-center gap-2">
+                                            <Code className="w-3 h-3 text-indigo-500" /> Starter Code
+                                        </label>
+                                        <select 
+                                            className="text-[10px] font-bold text-slate-500 bg-transparent outline-none"
+                                            value={question.language}
+                                            onChange={(e) => onUpdate({ language: e.target.value })}
+                                        >
+                                            <option value="python">Python</option>
+                                            <option value="javascript">JavaScript</option>
+                                            <option value="java">Java</option>
+                                            <option value="cpp">C++</option>
+                                        </select>
                                     </div>
-                                    <div className="space-y-2">
-                                        {question.testCases?.map((tc, i) => (
-                                            <div key={i} className="flex gap-2 items-center bg-slate-50 p-2 rounded border border-slate-200">
-                                                <div className="flex-1">
-                                                    <span className="text-[10px] text-slate-400 block">Input</span>
-                                                    <input className="w-full bg-transparent text-xs font-mono font-medium outline-none" defaultValue={tc.input} />
+                                    <textarea 
+                                        className="w-full p-5 bg-[#0F172A] text-emerald-400 font-mono text-xs rounded-2xl min-h-[160px] border border-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-inner"
+                                        spellCheck={false}
+                                        value={question.starterCode}
+                                        onChange={(e) => onUpdate({ starterCode: e.target.value })}
+                                        placeholder="# Starter code for students..."
+                                    />
+                                    <div className="mt-4">
+                                        <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                            <Sparkles className="w-3 h-3 text-amber-500" /> Reference Solution
+                                        </label>
+                                        <textarea 
+                                            className="w-full p-5 bg-slate-900 text-indigo-300 font-mono text-xs rounded-2xl min-h-[160px] border border-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500/50 shadow-inner"
+                                            spellCheck={false}
+                                            value={(question as any).solutionCode || ''}
+                                            onChange={(e) => onUpdate({ solutionCode: e.target.value } as any)}
+                                            placeholder="# Your reference implementation..."
+                                        />
+                                    </div>
+                                </div>
+                                <div className="space-y-6">
+                                    <div>
+                                        <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                            <Plus className="w-3 h-3 text-indigo-500" /> Execution Constraints
+                                        </label>
+                                        <Input 
+                                            placeholder="e.g. Time Limit: 1s, Memory: 256MB" 
+                                            className="bg-slate-50 border-slate-200 rounded-xl"
+                                            value={question.constraints}
+                                            onChange={(e) => onUpdate({ constraints: e.target.value })}
+                                        />
+                                    </div>
+                                    <div>
+                                        <div className="flex justify-between items-center mb-3">
+                                            <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest">Test Cases</label>
+                                            <button 
+                                                onClick={onAddTestCase}
+                                                className="text-[10px] font-bold text-indigo-600 hover:text-white hover:bg-indigo-600 border border-indigo-100 px-3 py-1.5 rounded-full transition-all"
+                                            >
+                                                + Add Case
+                                            </button>
+                                        </div>
+                                        <div className="space-y-3">
+                                            {question.testCases?.map((tc, i) => (
+                                                <div key={tc.id} className="group/tc flex flex-col gap-3 bg-slate-50/50 p-4 rounded-2xl border border-slate-100 hover:bg-white hover:border-indigo-100 transition-all">
+                                                    <div className="flex items-center gap-4">
+                                                        <div className="flex-1">
+                                                            <span className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Input</span>
+                                                            <input 
+                                                                className="w-full bg-transparent text-xs font-mono font-bold outline-none" 
+                                                                placeholder="e.g. [1, 2, 3]"
+                                                                value={tc.input}
+                                                                onChange={(e) => onUpdateTestCase(tc.id, { input: e.target.value })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex-1">
+                                                            <span className="text-[9px] font-bold text-slate-400 uppercase mb-1 block">Expected Output</span>
+                                                            <input 
+                                                                className="w-full bg-transparent text-xs font-mono font-bold text-emerald-600 outline-none" 
+                                                                placeholder="e.g. 6"
+                                                                value={tc.output}
+                                                                onChange={(e) => onUpdateTestCase(tc.id, { output: e.target.value })}
+                                                            />
+                                                        </div>
+                                                        <div className="flex items-center gap-2">
+                                                            <button 
+                                                                onClick={() => onUpdateTestCase(tc.id, { isHidden: !tc.isHidden })}
+                                                                className={`p-1.5 rounded-lg transition-all ${tc.isHidden ? 'bg-indigo-50 text-indigo-600' : 'text-slate-300 hover:text-slate-600'}`}
+                                                                title={tc.isHidden ? "Hidden Test Case" : "Visible Test Case"}
+                                                            >
+                                                                {tc.isHidden ? <Eye className="w-4 h-4" /> : <Eye className="w-4 h-4 opacity-40" />}
+                                                            </button>
+                                                            <button 
+                                                                onClick={() => onDeleteTestCase(tc.id)}
+                                                                className="p-1.5 rounded-lg text-slate-300 hover:text-red-500 hover:bg-red-50 transition-all"
+                                                            >
+                                                                <X className="w-4 h-4" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
-                                                <div className="w-px h-6 bg-slate-200"></div>
-                                                <div className="flex-1">
-                                                    <span className="text-[10px] text-slate-400 block">Expected</span>
-                                                    <input className="w-full bg-transparent text-xs font-mono font-medium text-emerald-600 outline-none" defaultValue={tc.output} />
-                                                </div>
-                                                <div className="flex items-center gap-1">
-                                                    {tc.isHidden && <Eye className="w-3 h-3 text-slate-400" />}
-                                                    <button className="text-slate-300 hover:text-red-500"><X className="w-3 h-3" /></button>
-                                                </div>
-                                            </div>
-                                        ))}
+                                            ))}
+                                        </div>
                                     </div>
                                 </div>
                             </div>
@@ -455,22 +775,45 @@ const QuestionEditorCard: React.FC<{ question: ExamQuestion, index: number, onDe
 
                     {/* MCQ Specifics */}
                     {question.type === 'mcq' && (
-                        <div className="space-y-2">
-                            <label className="block text-xs font-bold text-slate-700 uppercase mb-1">Options</label>
-                            {question.options?.map((opt, i) => (
-                                <div key={i} className="flex items-center gap-3">
-                                    <div className={`w-5 h-5 rounded-full border flex items-center justify-center cursor-pointer ${opt.isCorrect ? 'bg-green-500 border-green-500' : 'bg-white border-slate-300'}`}>
-                                        {opt.isCorrect && <Check className="w-3 h-3 text-white" />}
+                        <div className="space-y-4">
+                            <label className="block text-[10px] font-bold text-slate-900 uppercase tracking-widest mb-2 flex items-center gap-2">
+                                <List className="w-3 h-3 text-indigo-500" /> Answer Options
+                            </label>
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                {question.options?.map((opt, i) => (
+                                    <div key={opt.id} className="flex items-center gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-100 hover:bg-white hover:border-indigo-100 transition-all group/opt">
+                                        <button 
+                                            onClick={() => onUpdateOption(opt.id, { isCorrect: true })}
+                                            className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-all ${opt.isCorrect ? 'bg-emerald-500 border-emerald-500 shadow-[0_0_12px_rgba(16,185,129,0.4)]' : 'bg-white border-slate-200 group-hover/opt:border-indigo-200'}`}
+                                        >
+                                            {opt.isCorrect && <Check className="w-3.5 h-3.5 text-white stroke-[3px]" />}
+                                        </button>
+                                        <input 
+                                            className="flex-1 bg-transparent text-sm font-medium text-slate-900 outline-none" 
+                                            placeholder={`Option ${i + 1}`}
+                                            value={opt.text}
+                                            onChange={(e) => onUpdateOption(opt.id, { text: e.target.value })}
+                                        />
+                                        <button 
+                                            onClick={() => onDeleteOption(opt.id)}
+                                            className="opacity-0 group-hover/opt:opacity-100 p-1.5 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-all"
+                                        >
+                                            <Trash2 className="w-4 h-4" />
+                                        </button>
                                     </div>
-                                    <input className="flex-1 p-2 bg-slate-50 border border-slate-200 rounded text-sm focus:border-indigo-500 outline-none" defaultValue={opt.text} />
-                                    <button className="text-slate-300 hover:text-red-500"><Trash2 className="w-4 h-4" /></button>
-                                </div>
-                            ))}
-                            <button className="text-xs font-bold text-indigo-600 hover:underline mt-1">+ Add Option</button>
+                                ))}
+                                <button 
+                                    onClick={onAddOption}
+                                    className="flex items-center justify-center gap-3 p-4 rounded-2xl border-2 border-dashed border-slate-200 hover:border-indigo-400 hover:bg-indigo-50/50 group/add transition-all"
+                                >
+                                    <Plus className="w-4 h-4 text-slate-400 group-hover/add:text-indigo-500" />
+                                    <span className="text-sm font-bold text-slate-500 group-hover/add:text-indigo-600">Add New Option</span>
+                                </button>
+                            </div>
                         </div>
                     )}
                 </div>
             )}
         </div>
     );
-}
+}

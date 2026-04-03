@@ -4,8 +4,6 @@ import { AuthProvider, useAuth } from './services/authContext';
 import { LoginScreen } from './screens/Login';
 import { RegisterScreen } from './screens/Register';
 import { DashboardScreen } from './screens/Dashboard';
-import { MyCoursesScreen } from './screens/MyCourses';
-import { CourseLearningScreen } from './screens/CourseLearning';
 import { QuizScreen } from './screens/Quiz';
 import { PracticeLabScreen } from './screens/PracticeLab';
 import { ProctoringScreen } from './screens/Proctoring';
@@ -24,7 +22,6 @@ import { FacultyDisputesScreen } from './screens/FacultyDisputes';
 import { FacultyAnalyticsScreen } from './screens/FacultyAnalytics';
 import { SettingsScreen } from './screens/Settings';
 import { HelpCenterScreen } from './screens/HelpCenter';
-import { FacultyCoursesScreen } from './screens/FacultyCourses';
 import { FacultyReportsScreen } from './screens/FacultyReports';
 import { ProctoringTestScreen } from './screens/ProctoringTest';
 
@@ -106,8 +103,6 @@ const AppRoutes: React.FC = () => {
         <FacultyDisputesScreen onNavigate={navigate} />
       ) : currentPath === '/faculty-analytics' ? (
         <FacultyAnalyticsScreen onNavigate={navigate} />
-      ) : currentPath === '/faculty-courses' ? (
-        <FacultyCoursesScreen onNavigate={navigate} />
       ) : currentPath === '/reports' ? (
         <FacultyReportsScreen onNavigate={navigate} />
       ) : currentPath === '/live-monitoring' ? (
@@ -116,8 +111,6 @@ const AppRoutes: React.FC = () => {
         <ExamAnalyticsScreen onNavigate={navigate} />
       ) : currentPath === '/students' ? (
         <StudentManagementScreen onNavigate={navigate} />
-      ) : currentPath === '/courses' ? (
-        <MyCoursesScreen onNavigate={navigate} />
       ) : currentPath === '/exams' ? (
         <ExamsScreen onNavigate={navigate} />
       ) : currentPath === '/analytics' ? (
@@ -126,8 +119,6 @@ const AppRoutes: React.FC = () => {
         <SettingsScreen onNavigate={navigate} />
       ) : currentPath === '/help' ? (
         <HelpCenterScreen onNavigate={navigate} />
-      ) : currentPath.startsWith('/learning') ? (
-        <CourseLearningScreen onNavigate={navigate} />
       ) : currentPath === '/quiz' ? (
         <QuizScreen onNavigate={navigate} />
       ) : currentPath === '/lab' ? (

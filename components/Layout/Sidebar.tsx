@@ -30,7 +30,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentUser, onNavigat
 
   const studentItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/dashboard' },
-    { label: 'My Courses', icon: BookOpen, path: '/courses' },
     { label: 'Analytics', icon: BarChart2, path: '/analytics' },
     { label: 'Practice Labs', icon: Beaker, path: '/lab' },
     { label: 'Exams', icon: FileText, path: '/exams' },
@@ -38,7 +37,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentUser, onNavigat
 
   const facultyItems = [
     { label: 'Dashboard', icon: LayoutDashboard, path: '/faculty-dashboard' },
-    { label: 'Courses', icon: BookOpen, path: '/faculty-courses' },
     { label: 'Exams', icon: FileText, path: '/faculty-exams' },
     { label: 'Students', icon: Users, path: '/students' },
     { label: 'Reports', icon: ClipboardList, path: '/reports' },

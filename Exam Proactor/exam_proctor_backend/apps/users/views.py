@@ -35,14 +35,21 @@ class UserViewSet(viewsets.ModelViewSet):
         serializer = UserProfileSerializer(request.user)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['put', 'patch'], permission_classes=[IsAuthenticated])
-    def update_profile(self, request):
-        """Update current user profile."""
-        serializer = UserProfileSerializer(request.user, data=request.data, partial=True)
-        if serializer.is_valid():
-            serializer.save()
-            return Response(serializer.data)
-        return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def reset_password(self, request, pk=None):
+        """Reset a student's password — faculty/admin only."""
+        if request.user.role not in ('instructor', 'admin'):
+            return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
+
+        user = self.get_object()
+        new_password = request.data.get('password')
+        
+        if not new_password:
+            return Response({'error': 'Password is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        user.set_password(new_password)
+        user.save()
+        return Response({'message': f'Password for {user.username} has been reset successfully.'})
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def students(self, request):
@@ -50,60 +57,46 @@ class UserViewSet(viewsets.ModelViewSet):
         if request.user.role not in ('instructor', 'admin'):
             return Response({'error': 'Permission denied'}, status=status.HTTP_403_FORBIDDEN)
 
-        students = User.objects.filter(role='student').order_by('-created_at')
+        students = User.objects.filter(role='student').order_by('-date_joined')
         result = []
         for student in students:
             # Get exam enrollments for performance data
             enrollments = ExamEnrollment.objects.filter(student=student)
-            avg_score = enrollments.filter(percentage__isnull=False).aggregate(
+            avg_val = enrollments.filter(percentage__isnull=False).aggregate(
                 avg=Avg('percentage')
-            )['avg'] or 0
+            )['avg']
+            avg_score = avg_val if avg_val is not None else 0
 
             # Get course enrollments
             course_enrollments = CourseEnrollment.objects.filter(student=student).select_related('course')
             courses = [ce.course.title for ce in course_enrollments]
 
             # Determine grade from average score
-            if avg_score >= 93:
-                grade = 'A'
-            elif avg_score >= 90:
-                grade = 'A-'
-            elif avg_score >= 87:
-                grade = 'B+'
-            elif avg_score >= 83:
-                grade = 'B'
-            elif avg_score >= 80:
-                grade = 'B-'
-            elif avg_score >= 77:
-                grade = 'C+'
-            elif avg_score >= 73:
-                grade = 'C'
-            elif avg_score >= 60:
-                grade = 'D'
-            elif avg_score > 0:
-                grade = 'F'
-            else:
-                grade = '-'
-
-            # Determine status
-            if not student.is_active:
-                stu_status = 'Inactive'
-            elif not student.is_verified and student.date_joined:
-                stu_status = 'Active'
-            else:
-                stu_status = 'Active'
+            if avg_score >= 93: grade = 'A'
+            elif avg_score >= 90: grade = 'A-'
+            elif avg_score >= 87: grade = 'B+'
+            elif avg_score >= 83: grade = 'B'
+            elif avg_score >= 80: grade = 'B-'
+            elif avg_score >= 77: grade = 'C+'
+            elif avg_score >= 73: grade = 'C'
+            elif avg_score >= 60: grade = 'D'
+            elif avg_score > 0: grade = 'F'
+            else: grade = '-'
 
             result.append({
                 'id': str(student.id),
-                'name': student.get_full_name() or student.username,
+                'username': student.username,
+                'name': f"{student.first_name} {student.last_name}".strip() or student.username,
+                'first_name': student.first_name,
+                'last_name': student.last_name,
                 'email': student.email,
-                'status': stu_status,
+                'status': 'Inactive' if not student.is_active else 'Active',
                 'courses': courses,
                 'performance': round(avg_score),
                 'grade': grade,
-                'lastActive': student.last_login.strftime('%b %d, %Y %I:%M %p') if student.last_login else 'Never',
-                'enrollmentDate': student.date_joined.strftime('%b %d, %Y') if student.date_joined else '',
-                'avatar': f'https://ui-avatars.com/api/?name={student.get_full_name() or student.username}&background=random',
+                'lastActive': student.last_login.strftime('%b %d, %Y') if student.last_login else 'Never',
+                'enrollmentDate': student.date_joined.strftime('%Y-%m-%d') if student.date_joined else '',
+                'avatar': f'https://ui-avatars.com/api/?name={student.username}&background=random',
             })
 
         return Response(result)

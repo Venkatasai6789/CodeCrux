@@ -172,6 +172,37 @@ export const usersAPI = {
   async getStudents(): Promise<any[]> {
     return apiRequest('/users/students/');
   },
+
+  /** Add a new student record — admin only */
+  async addStudent(data: any): Promise<any> {
+    return apiRequest('/users/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Update an existing student record — admin only */
+  async updateStudent(id: string | number, data: any): Promise<any> {
+    return apiRequest(`/users/${id}/`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  /** Delete a student record — admin only */
+  async deleteStudent(id: string | number): Promise<any> {
+    return apiRequest(`/users/${id}/`, {
+      method: 'DELETE',
+    });
+  },
+
+  /** Reset a student's password — faculty/admin only */
+  async resetPassword(id: string | number, password: string): Promise<any> {
+    return apiRequest(`/users/${id}/reset_password/`, {
+      method: 'POST',
+      body: JSON.stringify({ password }),
+    });
+  },
 };
 
 // ─── COURSES API ───────────────────────────────────────────────────
@@ -232,6 +263,13 @@ export const examsAPI = {
     });
   },
 
+  async createFromScratch(examData: any): Promise<any> {
+    return apiRequest('/exams/exams/create_from_scratch/', {
+      method: 'POST',
+      body: JSON.stringify(examData),
+    });
+  },
+
   async enrollInExam(examId: number | string): Promise<any> {
     return apiRequest(`/exams/exams/${examId}/enroll/`, {
       method: 'POST',
@@ -260,6 +298,16 @@ export const examsAPI = {
   /** Dashboard stats for both student and faculty. */
   async getDashboardStats(): Promise<any> {
     return apiRequest('/exams/exams/dashboard_stats/');
+  },
+
+  /** Detailed examination-centric analytics for students. */
+  async getDetailedAnalytics(): Promise<any> {
+    return apiRequest('/exams/exams/student_detailed_analytics/');
+  },
+
+  /** Faculty-specific analytics — overview of all students and exams. */
+  async getFacultyAnalytics(): Promise<any> {
+    return apiRequest('/exams/analytics/faculty/');
   },
 };
 

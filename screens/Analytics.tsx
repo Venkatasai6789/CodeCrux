@@ -1,119 +1,89 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
 import { 
   TrendingUp, Clock, Calendar, Award, Target, 
   ArrowUp, ArrowDown, Download, Filter, MoreHorizontal,
-  ChevronDown, Zap, BarChart2, Activity, PieChart, CheckCircle
+  ChevronDown, Zap, BarChart2, Activity, PieChart, CheckCircle,
+  FileText, ShieldCheck, Timer, Brain, LayoutDashboard, Search, Loader2
 } from 'lucide-react';
+import { useAuth } from '../services/authContext';
+import { examsAPI } from '../services/apiService';
 
 interface AnalyticsScreenProps {
   onNavigate: (path: string) => void;
 }
 
 export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) => {
-  const user: User = {
-    id: '1',
-    name: 'Arka Maulana',
-    email: 'arka.m@university.edu',
-  };
-
+  const { user: authUser } = useAuth();
+  const [isLoading, setIsLoading] = useState(true);
   const [timeRange, setTimeRange] = useState<'Week' | 'Month' | 'Year'>('Month');
-  const [activeChartTab, setActiveChartTab] = useState<'hours' | 'completion' | 'exams'>('hours');
+  const [activeChartTab, setActiveChartTab] = useState<'scores' | 'accuracy' | 'speed'>('scores');
 
-  // Dynamic Data Model based on Time Range
-  const analyticsData = {
-    Week: {
-      kpi: {
-        streak: "12 Days", streakTrend: "+2", streakLabel: "from last week",
-        time: "12.5h", timeTrend: "+5%", timeLabel: "vs last week",
-        score: "88%", scoreTrend: "+1%", scoreLabel: "improvement",
-        tasks: "24", tasksTrend: "+3", tasksLabel: "vs last week"
-      },
-      hours: {
-        data: [2.5, 3.8, 1.5, 4.2, 3.0, 5.5, 2.0],
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'],
-        total: '22.5h'
-      },
-      completion: {
-        data: [45, 70, 30, 85, 55],
-        labels: ['React', 'UX Des', 'System', 'Algo', 'Python']
-      },
-      exams: {
-        data: [75, 78, 80, 82, 81, 85, 88],
-        labels: ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+  const [analyticsData, setAnalyticsData] = useState<any>(null);
+
+  useEffect(() => {
+    const fetchAnalytics = async () => {
+      try {
+        setIsLoading(true);
+        const data = await examsAPI.getDetailedAnalytics();
+        setAnalyticsData(data);
+      } catch (err) {
+        console.error("Failed to fetch analytics:", err);
+      } finally {
+        setIsLoading(false);
       }
-    },
-    Month: {
-      kpi: {
-        streak: "12 Days", streakTrend: "+2 days", streakLabel: "vs last month",
-        time: "48.5h", timeTrend: "+12%", timeLabel: "vs last month",
-        score: "87%", scoreTrend: "+3%", scoreLabel: "improvement",
-        tasks: "124", tasksTrend: "+5%", tasksLabel: "vs last month"
-      },
-      hours: {
-        data: [12, 15, 10, 18, 22, 14, 16, 20, 18, 24],
-        labels: ['3 Mar', '6 Mar', '9 Mar', '12 Mar', '15 Mar', '18 Mar', '21 Mar', '24 Mar', '27 Mar', '30 Mar'],
-        total: '169h'
-      },
-      completion: {
-        data: [60, 85, 40, 95, 70, 50, 80],
-        labels: ['React', 'UX', 'Sys Des', 'Algo', 'Py', 'SQL', 'Java']
-      },
-      exams: {
-        data: [65, 70, 68, 74, 78, 85, 82, 90, 88, 95],
-        labels: ['Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov']
-      }
-    },
-    Year: {
-      kpi: {
-        streak: "45 Days", streakTrend: "Best", streakLabel: "Personal Best",
-        time: "842h", timeTrend: "+15%", timeLabel: "vs last year",
-        score: "85%", scoreTrend: "+8%", scoreLabel: "improvement",
-        tasks: "1,240", tasksTrend: "+15%", tasksLabel: "vs last year"
-      },
-      hours: {
-        data: [45, 52, 48, 60, 55, 70, 68, 80, 75, 85, 90, 65],
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
-        total: '793h'
-      },
-      completion: {
-        data: [80, 90, 60, 95, 85, 70, 75, 88],
-        labels: ['FE Cert', 'BE Cert', 'DevOps', 'Data', 'ML', 'Cloud', 'Sec', 'Mobile']
-      },
-      exams: {
-        data: [60, 65, 62, 68, 72, 75, 78, 82, 85, 88, 90, 92],
-        labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
-      }
-    }
+    };
+
+    fetchAnalytics();
+  }, []);
+
+  const user: User = {
+    id: String(authUser?.id || '1'),
+    name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Student',
+    email: authUser?.email || '',
   };
 
-  const currentData = analyticsData[timeRange];
+  if (isLoading || !analyticsData) {
+      return (
+          <DashboardLayout currentUser={user} onNavigate={onNavigate} currentPath="/analytics">
+              <div className="flex items-center justify-center min-h-[60vh]">
+                  <div className="text-center space-y-4">
+                      <Loader2 className="w-12 h-12 text-indigo-600 animate-spin mx-auto" />
+                      <p className="text-slate-500 font-bold uppercase tracking-widest text-xs">Synthesizing Intelligence...</p>
+                  </div>
+              </div>
+          </DashboardLayout>
+      );
+  }
 
   return (
     <DashboardLayout currentUser={user} onNavigate={onNavigate} currentPath="/analytics">
-      <div className="animate-slide-up pb-12 space-y-6 md:space-y-8 max-w-[1600px] mx-auto">
+      <div className="animate-slide-up pb-16 space-y-8 max-w-[1600px] mx-auto px-4 md:px-0">
         
         {/* Header Section */}
-        <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
-          <div>
-            <h1 className="text-2xl md:text-3xl font-bold text-slate-900 tracking-tight">Performance Analytics</h1>
-            <p className="text-sm text-slate-500 mt-2 max-w-2xl leading-relaxed">
-              Deep dive into your learning habits. Track your consistency, course completion rates, and exam performance over time.
-            </p>
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+             <div className="flex items-center gap-2 mb-1">
+                <div className="w-2 h-8 bg-indigo-600 rounded-full"></div>
+                <h1 className="text-3xl font-black text-slate-900 tracking-tight">Assessment Intelligence</h1>
+             </div>
+             <p className="text-sm text-slate-500 font-medium max-w-2xl leading-relaxed flex items-center gap-2">
+                <Brain className="w-4 h-4 text-indigo-400" /> Advanced data processing of your mock test performance and accuracy trends.
+             </p>
           </div>
           
-          <div className="flex items-center gap-3 self-start md:self-auto">
-             <div className="flex items-center gap-1 bg-white p-1 rounded-xl border border-slate-200 shadow-sm">
+          <div className="flex items-center gap-3">
+             <div className="flex p-1.5 bg-white border border-slate-200 rounded-2xl shadow-sm">
                 {(['Week', 'Month', 'Year'] as const).map((range) => (
                   <button
                     key={range}
                     onClick={() => setTimeRange(range)}
-                    className={`px-4 py-2 text-xs font-bold rounded-lg transition-all ${
+                    className={`px-5 py-2 text-xs font-black rounded-xl transition-all uppercase tracking-widest ${
                       timeRange === range 
-                        ? 'bg-slate-900 text-white shadow-md' 
-                        : 'text-slate-500 hover:text-slate-900 hover:bg-slate-50'
+                        ? 'bg-slate-900 text-white shadow-lg' 
+                        : 'text-slate-400 hover:text-slate-900'
                     }`}
                   >
                     {range}
@@ -121,19 +91,30 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 ))}
              </div>
              
-             <button className="p-2.5 bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 rounded-xl shadow-sm transition-all hover:shadow-md" title="Export Data">
+             <button className="p-3 bg-white border border-slate-200 text-slate-500 hover:text-indigo-600 hover:border-indigo-200 rounded-2xl shadow-sm transition-all hover:shadow-md">
                 <Download className="w-5 h-5" />
              </button>
           </div>
         </div>
 
-        {/* KPI Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 md:gap-6">
+        {/* Real Dynamic KPI Grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-6">
             <MetricCard 
-                label="Study Streak" 
-                value={currentData.kpi.streak} 
-                trend={currentData.kpi.streakTrend} 
-                trendLabel={currentData.kpi.streakLabel}
+                label="Mock Tests" 
+                value={`${analyticsData.kpi.tests} Tests`} 
+                trend="+2" 
+                trendLabel="vs last week"
+                trendUp={true}
+                icon={FileText}
+                color="text-indigo-600"
+                bg="bg-indigo-50"
+                borderColor="border-indigo-100"
+            />
+            <MetricCard 
+                label="Total Questions" 
+                value={analyticsData.kpi.questions} 
+                trend="+12%" 
+                trendLabel="solved"
                 trendUp={true}
                 icon={Target}
                 color="text-orange-600"
@@ -141,21 +122,10 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 borderColor="border-orange-100"
             />
             <MetricCard 
-                label="Total Study Time" 
-                value={currentData.kpi.time} 
-                trend={currentData.kpi.timeTrend} 
-                trendLabel={currentData.kpi.timeLabel}
-                trendUp={true}
-                icon={Clock}
-                color="text-indigo-600"
-                bg="bg-indigo-50"
-                borderColor="border-indigo-100"
-            />
-            <MetricCard 
-                label="Avg. Exam Score" 
-                value={currentData.kpi.score} 
-                trend={currentData.kpi.scoreTrend} 
-                trendLabel={currentData.kpi.scoreLabel}
+                label="Average Score" 
+                value={`${analyticsData.kpi.avg_score}%`} 
+                trend="+3%" 
+                trendLabel="improvement"
                 trendUp={true}
                 icon={Award}
                 color="text-emerald-600"
@@ -163,151 +133,120 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
                 borderColor="border-emerald-100"
             />
             <MetricCard 
-                label="Tasks Completed" 
-                value={currentData.kpi.tasks} 
-                trend={currentData.kpi.tasksTrend} 
-                trendLabel={currentData.kpi.tasksLabel}
-                trendUp={true} // Task trend usually positive
-                icon={Zap}
+                label="Solving Speed" 
+                value={analyticsData.kpi.speed} 
+                trend="-5s" 
+                trendLabel="improvement"
+                trendUp={true}
+                icon={Timer}
                 color="text-blue-600"
                 bg="bg-blue-50"
                 borderColor="border-blue-100"
             />
         </div>
 
-        {/* Main Trends Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 md:gap-8">
+        {/* Dynamic Trends Row */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             
-            {/* Main Interactive Chart (2/3 Width) */}
-            <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-100 p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow relative overflow-hidden">
-                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                           Learning Trends
-                        </h3>
-                        <p className="text-xs text-slate-400 mt-1 font-medium uppercase tracking-wider">
-                            {activeChartTab === 'hours' ? 'Weekly Study Hours' : activeChartTab === 'completion' ? 'Course Completion Rates' : 'Exam Performance'} ({timeRange})
+            <div className="lg:col-span-2 bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm relative overflow-hidden group">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-10 gap-6">
+                    <div className="space-y-1">
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Strategy Analysis</h3>
+                        <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.1em]">
+                            {activeChartTab === 'scores' ? 'Score Progression %' : activeChartTab === 'accuracy' ? 'Topic Accuracy Breakdown' : 'Answering Latency Trends'}
                         </p>
                     </div>
                     
-                    {/* Chart Toggle */}
-                    <div className="flex p-1 bg-slate-100 rounded-lg overflow-x-auto">
-                        <button 
-                            onClick={() => setActiveChartTab('hours')}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'hours' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            <Clock className="w-3.5 h-3.5" /> Study Hours
+                    <div className="flex p-1.5 bg-slate-100 rounded-2xl overflow-x-auto">
+                        <button onClick={() => setActiveChartTab('scores')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'scores' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <TrendingUp className="w-3.5 h-3.5" /> Score History
                         </button>
-                        <button 
-                            onClick={() => setActiveChartTab('completion')}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'completion' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            <CheckCircle className="w-3.5 h-3.5" /> Completion
+                        <button onClick={() => setActiveChartTab('accuracy')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'accuracy' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <ShieldCheck className="w-3.5 h-3.5" /> Accuracy %
                         </button>
-                        <button 
-                            onClick={() => setActiveChartTab('exams')}
-                            className={`px-3 py-1.5 rounded-md text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'exams' ? 'bg-white text-indigo-600 shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}
-                        >
-                            <TrendingUp className="w-3.5 h-3.5" /> Exams
+                        <button onClick={() => setActiveChartTab('speed')} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-wider transition-all flex items-center gap-2 whitespace-nowrap ${activeChartTab === 'speed' ? 'bg-white text-indigo-600 shadow-md' : 'text-slate-500 hover:text-slate-700'}`}>
+                            <Timer className="w-3.5 h-3.5" /> Answer Speed
                         </button>
                     </div>
                 </div>
                 
-                {/* Chart Container with Fade Transition */}
-                <div className="w-full h-[280px] md:h-[320px] relative">
-                     {activeChartTab === 'hours' && (
-                        <StudyHoursChart data={currentData.hours.data} labels={currentData.hours.labels} />
+                <div className="w-full h-[320px] md:h-[380px] mt-4">
+                     {activeChartTab === 'scores' && (
+                        <IntelligenceLineChart data={analyticsData.history.data.length > 0 ? analyticsData.history.data : [0]} labels={analyticsData.history.labels.length > 0 ? analyticsData.history.labels : ['No Data']} color="#6366f1" labelSuffix="%" />
                      )}
-                     {activeChartTab === 'completion' && (
-                        <CompletionBarChart data={currentData.completion.data} labels={currentData.completion.labels} />
+                     {activeChartTab === 'accuracy' && (
+                        <AccuracyBarChart data={analyticsData.subjects.map((s:any) => s.value)} labels={analyticsData.subjects.map((s:any) => s.name)} />
                      )}
-                     {activeChartTab === 'exams' && (
-                        <ExamSmoothChart data={currentData.exams.data} labels={currentData.exams.labels} />
+                     {activeChartTab === 'speed' && (
+                        <IntelligenceLineChart data={analyticsData.history.speed_data.length > 0 ? analyticsData.history.speed_data : [0]} labels={analyticsData.history.labels.length > 0 ? analyticsData.history.labels : ['No Data']} color="#f59e0b" labelSuffix="s" />
                      )}
                 </div>
             </div>
 
-            {/* Skill Radar Chart (1/3 Width) */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow flex flex-col items-center">
-                 <div className="w-full flex justify-between items-start mb-2">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900">Skill Proficiency</h3>
-                        <p className="text-xs text-slate-400 mt-1 font-medium uppercase tracking-wider">Current Mastery Levels</p>
-                    </div>
-                    <button className="text-slate-400 hover:text-indigo-600 transition-colors">
-                        <MoreHorizontal className="w-5 h-5" />
-                    </button>
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm flex flex-col items-center">
+                 <div className="w-full text-center mb-8">
+                    <h3 className="text-xl font-black text-slate-900 tracking-tight">Strategic Mastery</h3>
+                    <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.1em] mt-1">Holistic Assessment Readiness</p>
                  </div>
 
                  <div className="flex-1 w-full flex items-center justify-center">
-                    <SkillRadarChart />
+                    <StrategicRadarChart data={analyticsData.strategic} />
                  </div>
 
-                 <div className="w-full mt-4 grid grid-cols-2 gap-2 text-[10px] text-slate-500">
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-indigo-500"></div>
-                        <span>Your Stats</span>
+                 <div className="w-full mt-8 grid grid-cols-2 gap-4">
+                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100">
+                        <div className="w-3 h-3 rounded-full bg-indigo-500 ring-4 ring-indigo-50"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Current</span>
                     </div>
-                    <div className="flex items-center gap-2">
-                        <div className="w-2 h-2 rounded-full bg-slate-200"></div>
-                        <span>Class Avg</span>
+                    <div className="flex items-center gap-3 bg-slate-50 p-3 rounded-2xl border border-slate-100 opacity-60">
+                        <div className="w-3 h-3 rounded-full bg-slate-300 ring-4 ring-slate-100"></div>
+                        <span className="text-[10px] font-black uppercase tracking-widest text-slate-600">Target</span>
                     </div>
                  </div>
             </div>
         </div>
 
-        {/* Secondary Breakdowns Row */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 md:gap-8">
-
-            {/* Course Progress */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow">
-                <div className="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900">Course Progress</h3>
-                        <p className="text-xs text-slate-400 mt-1 font-medium uppercase tracking-wider">Completion vs. Time Invested</p>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm relative group overflow-hidden">
+                <div className="flex justify-between items-start mb-10">
+                    <div className="space-y-1">
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Subject Intelligence</h3>
+                        <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.1em]">Section-wise accuracy & speed balance</p>
                     </div>
-                    <button className="p-2 hover:bg-slate-50 rounded-lg text-slate-400">
-                        <Filter className="w-4 h-4" />
-                    </button>
                 </div>
                 
-                <div className="w-full h-[220px] overflow-x-auto custom-scrollbar pb-2">
-                    <div className="min-w-[500px] h-full">
-                        <CoursePerformanceChart />
+                <div className="w-full h-[280px] overflow-x-auto custom-scrollbar">
+                    <div className="min-w-[500px] h-full flex items-end">
+                        <SubjectPerformanceChart subjects={analyticsData.subjects} />
                     </div>
                 </div>
             </div>
 
-            {/* Consistency Heatmap */}
-            <div className="bg-white rounded-2xl border border-slate-100 p-6 md:p-8 shadow-sm hover:shadow-md transition-shadow flex flex-col">
-                <div className="flex justify-between items-start mb-6">
-                    <div>
-                        <h3 className="text-lg font-bold text-slate-900">Consistency Tracker</h3>
-                        <p className="text-xs text-slate-400 mt-1 font-medium uppercase tracking-wider">Daily Contribution Activity</p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs font-bold text-slate-600 bg-slate-50 px-2 py-1 rounded-lg cursor-pointer hover:bg-slate-100">
-                        <span>2024</span>
-                        <ChevronDown className="w-3 h-3" />
+            <div className="bg-white rounded-[2.5rem] border border-slate-100 p-8 shadow-sm flex flex-col relative overflow-hidden">
+                <div className="flex justify-between items-start mb-10">
+                    <div className="space-y-1">
+                        <h3 className="text-xl font-black text-slate-900 tracking-tight">Examination Activity</h3>
+                        <p className="text-[11px] text-slate-400 font-bold uppercase tracking-[0.1em]">Daily mock test contribution activity</p>
                     </div>
                 </div>
                 
-                <div className="flex-1 flex items-center justify-center w-full">
-                    <ConsistencyGrid />
+                <div className="flex-1 flex items-center justify-center w-full mt-4">
+                    <AssessmentHeatmap dailyData={analyticsData.heatmap} />
                 </div>
 
-                <div className="mt-6 pt-6 border-t border-slate-50 flex justify-between items-center">
-                    <div className="flex items-center gap-1.5 text-xs text-slate-500">
-                         <span>Less</span>
-                         <div className="w-3 h-3 rounded-sm bg-slate-100"></div>
-                         <div className="w-3 h-3 rounded-sm bg-indigo-200"></div>
-                         <div className="w-3 h-3 rounded-sm bg-indigo-400"></div>
-                         <div className="w-3 h-3 rounded-sm bg-indigo-600"></div>
-                         <span>More</span>
+                <div className="mt-10 pt-8 border-t border-slate-50 flex justify-between items-center">
+                    <div className="flex items-center gap-2 text-[10px] font-black uppercase tracking-widest text-slate-500">
+                         <span>Beginner</span>
+                         <div className="flex gap-[3px]">
+                             <div className="w-4 h-4 rounded-md bg-slate-50 border border-slate-100"></div>
+                             <div className="w-4 h-4 rounded-md bg-indigo-200"></div>
+                             <div className="w-4 h-4 rounded-md bg-indigo-400"></div>
+                             <div className="w-4 h-4 rounded-md bg-indigo-600"></div>
+                         </div>
+                         <span>Proctor</span>
                     </div>
-                    <span className="text-[10px] text-slate-400 font-medium">Updated today</span>
                 </div>
             </div>
-
         </div>
       </div>
     </DashboardLayout>
@@ -317,412 +256,164 @@ export const AnalyticsScreen: React.FC<AnalyticsScreenProps> = ({ onNavigate }) 
 /* --- SUB-COMPONENTS --- */
 
 const MetricCard = ({ label, value, trend, trendLabel, trendUp, icon: Icon, color, bg, borderColor }: any) => (
-    <div className={`bg-white p-6 rounded-2xl border border-slate-100 shadow-[0_2px_8px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_24px_rgba(0,0,0,0.04)] hover:-translate-y-1 transition-all duration-300 group`}>
-        <div className="flex justify-between items-start mb-4">
-            <div className={`p-3 rounded-2xl ${bg} ${color} border ${borderColor} group-hover:scale-110 transition-transform duration-300`}>
-                <Icon className="w-6 h-6" />
+    <div className={`bg-white p-8 rounded-[2rem] border border-slate-100 shadow-sm hover:shadow-xl hover:-translate-y-2 transition-all duration-500 group relative overflow-hidden`}>
+        <div className={`absolute -top-4 -right-4 w-24 h-24 ${bg} rounded-full opacity-0 group-hover:opacity-40 transition-opacity duration-300 scale-150`}></div>
+        <div className="flex justify-between items-start mb-6 relative z-10">
+            <div className={`p-4 rounded-[1.25rem] ${bg} ${color} border-2 ${borderColor} group-hover:scale-110 transition-all shadow-lg`}>
+                <Icon className="w-7 h-7" />
             </div>
-            <div className={`flex items-center gap-1.5 text-[11px] font-bold px-2.5 py-1 rounded-full border ${trendUp ? 'text-emerald-700 bg-emerald-50 border-emerald-100' : 'text-red-700 bg-red-50 border-red-100'}`}>
-                {trendUp ? <ArrowUp className="w-3 h-3" /> : <ArrowDown className="w-3 h-3" />}
+            <div className={`flex items-center gap-2 text-[11px] font-black px-3 py-1.5 rounded-xl border-2 ${trendUp ? 'text-emerald-600 bg-emerald-50 border-emerald-100' : 'text-red-600 bg-red-50 border-red-100'} uppercase tracking-tight`}>
+                {trendUp ? <ArrowUp className="w-3.5 h-3.5" /> : <ArrowDown className="w-3.5 h-3.5" />}
                 {trend}
             </div>
         </div>
-        <h3 className="text-3xl font-bold text-slate-900 tracking-tight mb-1">{value}</h3>
-        <div className="flex items-baseline gap-2">
-             <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">{label}</p>
-             <span className="text-[10px] text-slate-400 font-medium">/ {trendLabel}</span>
-        </div>
+        <h3 className="text-4xl font-black text-slate-900 tracking-tighter mb-2 relative z-10">{value}</h3>
+        <p className="text-[11px] font-black text-slate-400 uppercase tracking-[0.2em] relative z-10">{label}</p>
+        <p className="text-[10px] text-slate-400 font-bold italic opacity-70 relative z-10">{trendLabel}</p>
     </div>
 );
 
-// 1. Study Hours Line Chart
-const StudyHoursChart = ({ data, labels }: { data: number[], labels: string[] }) => {
+const IntelligenceLineChart = ({ data, labels, color, labelSuffix = '' }: { data: number[], labels: string[], color: string, labelSuffix?: string }) => {
     const width = 800;
     const height = 300;
-    const paddingY = 20;
-    const maxY = Math.max(...data) * 1.2 || 10;
+    const paddingY = 40;
+    const minVal = Math.min(...data) === Math.max(...data) ? 0 : Math.min(...data) * 0.8;
+    const maxVal = Math.max(...data) === 0 ? 100 : Math.max(...data) * 1.1;
 
     const points = data.map((d, i) => ({
-        x: (i / (data.length - 1)) * width,
-        y: height - (d / maxY) * (height - paddingY),
+        x: data.length > 1 ? (i / (data.length - 1)) * width : width/2,
+        y: height - ((d - minVal) / (maxVal - minVal)) * (height - paddingY),
     }));
 
     let pathD = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[i];
-        const p1 = points[i + 1];
-        const cp1x = p0.x + (p1.x - p0.x) / 2;
-        const cp1y = p0.y;
-        const cp2x = p0.x + (p1.x - p0.x) / 2;
-        const cp2y = p1.y;
-        pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p1.x} ${p1.y}`;
+    if (data.length > 1) {
+        for (let i = 0; i < points.length - 1; i++) {
+            const p0 = points[i];
+            const p1 = points[i + 1];
+            const cp1x = p0.x + (p1.x - p0.x) / 2;
+            pathD += ` C ${cp1x} ${p0.y}, ${cp1x} ${p1.y}, ${p1.x} ${p1.y}`;
+        }
     }
 
     return (
-        <div className="w-full h-full relative group animate-fade-in">
+        <div className="w-full h-full relative group animate-fade-in-up">
             <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
                 <defs>
-                    <linearGradient id="hoursGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#8B5CF6" stopOpacity="0.3" />
-                        <stop offset="100%" stopColor="#8B5CF6" stopOpacity="0" />
+                    <linearGradient id={`gradient-${color}`} x1="0" x2="0" y1="0" y2="1">
+                        <stop offset="0%" stopColor={color} stopOpacity="0.3" />
+                        <stop offset="100%" stopColor={color} stopOpacity="0" />
                     </linearGradient>
                 </defs>
-                
-                {/* Horizontal Grid Lines */}
-                {[0, 0.25, 0.5, 0.75, 1].map((tick, i) => {
-                     const y = height - (tick * (height - paddingY));
-                     return (
-                         <line key={i} x1={0} y1={y} x2={width} y2={y} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4" />
-                     );
-                })}
-
-                {/* Path */}
-                <path d={`${pathD} L ${width} ${height} L 0 ${height} Z`} fill="url(#hoursGradient)" />
-                <path d={pathD} fill="none" stroke="#8B5CF6" strokeWidth="4" strokeLinecap="round" strokeLinejoin="round" className="drop-shadow-sm" />
-
-                {/* Interactive Points */}
+                <path d={`${pathD} L ${width} ${height} L 0 ${height} Z`} fill={`url(#gradient-${color})`} />
+                <path d={pathD} fill="none" stroke={color} strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" />
                 {points.map((p, i) => (
-                    <g key={i} className="group/point">
-                         {/* Hidden hit area */}
-                         <circle cx={p.x} cy={p.y} r="12" fill="transparent" className="cursor-pointer" />
-                         {/* Visual Point */}
-                         <circle 
-                            cx={p.x} cy={p.y} r="6" 
-                            fill="white" stroke="#8B5CF6" strokeWidth="3" 
-                            className="transition-all duration-300 group-hover/point:scale-125 pointer-events-none"
-                         />
-                         {/* Tooltip */}
-                         <foreignObject x={Math.min(Math.max(p.x - 40, 0), width - 80)} y={p.y - 50} width="80" height="40" className="opacity-0 group-hover/point:opacity-100 transition-opacity pointer-events-none">
-                             <div className="bg-slate-900 text-white text-[10px] font-bold py-1 px-2 rounded-md text-center shadow-lg relative">
-                                 {data[i]} hrs
-                                 <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900"></div>
-                             </div>
-                         </foreignObject>
+                    <g key={i} className="group/dot">
+                         <circle cx={p.x} cy={p.y} r="15" fill="transparent" className="cursor-pointer" />
+                         <circle cx={p.x} cy={p.y} r="6" fill="white" stroke={color} strokeWidth="3" />
                     </g>
                 ))}
             </svg>
-            
-            <div className="flex justify-between mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">
-                {labels.map((l, i) => <span key={i}>{l}</span>)}
+            <div className="flex justify-between mt-8 text-[11px] font-black text-slate-400 uppercase tracking-[0.2em]">
+                {labels.length > 5 ? labels.filter((_, i) => i % 2 === 0).map((l, i) => <span key={i}>{l}</span>) : labels.map((l, i) => <span key={i}>{l}</span>)}
             </div>
         </div>
     );
 };
 
-// 2. Completion Bar Chart
-const CompletionBarChart = ({ data, labels }: { data: number[], labels: string[] }) => {
-    const maxVal = 100;
+const AccuracyBarChart = ({ data, labels }: { data: number[], labels: string[] }) => (
+    <div className="w-full h-full flex items-end justify-between px-6 pb-8 animate-fade-in gap-5">
+        {data.length === 0 && <div className="text-slate-300 text-sm italic w-full text-center">No subject data available</div>}
+        {data.map((val, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-4 group relative h-full justify-end max-w-[60px]">
+                <div className="w-full relative flex items-end justify-center h-[85%] bg-slate-50 rounded-full border border-slate-100/50 overflow-hidden">
+                    <div className={`w-full mx-1 mb-1 rounded-full transition-all duration-1000 bg-indigo-500`} style={{ height: `${val}%` }}></div>
+                </div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest truncate w-full text-center">{labels[i]}</span>
+            </div>
+        ))}
+    </div>
+);
+
+const StrategicRadarChart = ({ data }: { data: any[] }) => {
+    const size = 300;
+    const center = size / 2;
+    const radius = 100;
+    const getCoords = (val: number, idx: number) => {
+        const r = (val / 100) * radius;
+        const theta = (idx * 2 * Math.PI) / data.length - Math.PI / 2;
+        return { x: center + r * Math.cos(theta), y: center + r * Math.sin(theta) };
+    };
+    const dataPath = data.map((c, i) => {
+        const { x, y } = getCoords(c.value, i);
+        return `${i === 0 ? 'M' : 'L'} ${x} ${y}`;
+    }).join(' ') + ' Z';
 
     return (
-        <div className="w-full h-full flex items-end justify-between px-4 pb-6 animate-fade-in gap-4">
-            {data.map((val, i) => {
-                const heightPct = (val / maxVal) * 100;
+        <svg width={size} height={size} className="overflow-visible">
+            {[100, 75, 50, 25].map(ring => (
+                <path key={ring} d={data.map((_, i) => { const { x, y } = getCoords(ring, i); return `${i === 0 ? 'M' : 'L'} ${x} ${y}`; }).join(' ') + ' Z'} fill="none" stroke="#f1f5f9" strokeWidth="1" />
+            ))}
+            <path d={dataPath} fill="rgba(99, 102, 241, 0.2)" stroke="#6366f1" strokeWidth="4" />
+            {data.map((c, i) => {
+                const { x, y } = getCoords(c.value, i);
+                const labelPos = getCoords(135, i);
                 return (
-                    <div key={i} className="flex flex-col items-center gap-2 group w-full relative h-full justify-end">
-                        {/* Tooltip */}
-                        <div className="absolute bottom-[100%] mb-2 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0 pointer-events-none z-10">
-                             <div className="bg-slate-900 text-white text-[10px] font-bold py-1.5 px-3 rounded-lg shadow-lg whitespace-nowrap">
-                                 {labels[i]}: {val}%
-                             </div>
-                             <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 mx-auto mt-[-1px]"></div>
-                        </div>
-
-                        {/* Bar */}
-                        <div className="w-full max-w-[40px] h-[80%] flex items-end relative bg-slate-50 rounded-lg overflow-hidden">
-                            <div 
-                                className={`w-full rounded-lg transition-all duration-700 ease-out group-hover:opacity-90 relative ${val === 100 ? 'bg-emerald-500' : 'bg-indigo-500'}`}
-                                style={{ height: `${heightPct}%` }}
-                            >
-                                <div className="absolute inset-0 bg-gradient-to-b from-white/20 to-transparent"></div>
-                            </div>
-                        </div>
-                        
-                        {/* Label */}
-                        <span className={`text-[10px] font-bold uppercase truncate max-w-full ${val === 100 ? 'text-emerald-600' : 'text-slate-400 group-hover:text-indigo-600'}`}>
-                            {labels[i]}
-                        </span>
-                    </div>
+                    <g key={i}>
+                        <circle cx={x} cy={y} r="4" fill="white" stroke="#6366f1" strokeWidth="2" />
+                        <text x={labelPos.x} y={labelPos.y} textAnchor="middle" className="text-[10px] font-black uppercase fill-slate-400">{c.name}</text>
+                    </g>
                 );
             })}
-        </div>
+        </svg>
     );
 };
 
-// 3. Exam Chart (Existing, Enhanced)
-const ExamSmoothChart = ({ data, labels }: { data: number[], labels: string[] }) => {
-    const width = 800;
-    const height = 300;
-    const paddingY = 20;
-
-    const points = data.map((d, i) => ({
-        x: (i / (data.length - 1)) * width,
-        y: height - ((d - 50) / 50) * (height - paddingY),
-    }));
-
-    let pathD = `M ${points[0].x} ${points[0].y}`;
-    for (let i = 0; i < points.length - 1; i++) {
-        const p0 = points[i];
-        const p1 = points[i + 1];
-        const cp1x = p0.x + (p1.x - p0.x) / 2;
-        const cp1y = p0.y;
-        const cp2x = p0.x + (p1.x - p0.x) / 2;
-        const cp2y = p1.y;
-        pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${p1.x} ${p1.y}`;
-    }
-
-    const fillPath = `${pathD} L ${width} ${height} L 0 ${height} Z`;
-
-    return (
-        <div className="w-full h-full relative group animate-fade-in">
-            <svg viewBox={`0 0 ${width} ${height}`} className="w-full h-full overflow-visible" preserveAspectRatio="none">
-                <defs>
-                    <linearGradient id="areaGradient" x1="0" x2="0" y1="0" y2="1">
-                        <stop offset="0%" stopColor="#4F46E5" stopOpacity="0.3" />
-                        <stop offset="100%" stopColor="#4F46E5" stopOpacity="0" />
-                    </linearGradient>
-                    <filter id="lineShadow" x="-20%" y="-20%" width="140%" height="140%">
-                        <feDropShadow dx="0" dy="4" stdDeviation="3" floodColor="#4F46E5" floodOpacity="0.3"/>
-                    </filter>
-                </defs>
-                
-                {[0, 25, 50, 75, 100].map((tick, i) => {
-                     const y = height - (tick/100) * height;
-                     return (
-                         <line key={i} x1={0} y1={y} x2={width} y2={y} stroke="#F1F5F9" strokeWidth="1" strokeDasharray="4" />
-                     );
-                })}
-
-                <path d={fillPath} fill="url(#areaGradient)" />
-
-                <path 
-                    d={pathD} 
-                    fill="none" 
-                    stroke="#4F46E5" 
-                    strokeWidth="4" 
-                    strokeLinecap="round" 
-                    strokeLinejoin="round" 
-                    filter="url(#lineShadow)"
-                />
-
-                {points.map((p, i) => (
-                    <g key={i} className="group/point">
-                         <circle 
-                            cx={p.x} cy={p.y} r="6" 
-                            fill="white" stroke="#4F46E5" strokeWidth="3" 
-                            className="transition-all duration-300 hover:scale-150 cursor-pointer"
-                         />
-                         <foreignObject x={Math.min(Math.max(p.x - 40, 0), width - 80)} y={p.y - 50} width="80" height="40" className="opacity-0 group-hover/point:opacity-100 transition-opacity pointer-events-none">
-                             <div className="bg-slate-900 text-white text-[10px] font-bold py-1 px-2 rounded-md text-center shadow-lg relative">
-                                 Score: {data[i]}%
-                                 <div className="absolute top-full left-1/2 -translate-x-1/2 -mt-1 border-4 border-transparent border-t-slate-900"></div>
-                             </div>
-                         </foreignObject>
-                    </g>
-                ))}
-            </svg>
-            
-            <div className="flex justify-between mt-2 text-[10px] font-bold text-slate-400 uppercase tracking-wider px-2">
-                {labels.map((l, i) => <span key={i}>{l}</span>)}
-            </div>
-        </div>
-    );
-};
-
-// ... other charts ...
-
-// 1. Skill Radar Chart
-const SkillRadarChart = () => {
-    const skills = [
-        { name: 'Frontend', value: 85 },
-        { name: 'Backend', value: 65 },
-        { name: 'UI/UX', value: 75 },
-        { name: 'DevOps', value: 50 },
-        { name: 'Theory', value: 90 },
-    ];
-
-    const size = 260;
-    const center = size / 2;
-    const radius = 90;
-    const sides = skills.length;
-    const angleSlice = (Math.PI * 2) / sides;
-
-    const getCoords = (value: number, index: number) => {
-        const r = (value / 100) * radius;
-        const angle = index * angleSlice - Math.PI / 2;
-        return {
-            x: center + r * Math.cos(angle),
-            y: center + r * Math.sin(angle)
-        };
-    };
-
-    const dataPoints = skills.map((s, i) => getCoords(s.value, i));
-    const dataPath = dataPoints.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ') + ' Z';
-
-    const webs = [100, 75, 50, 25].map(level => {
-        const points = skills.map((_, i) => getCoords(level, i));
-        return points.map((p, i) => `${i === 0 ? 'M' : 'L'} ${p.x},${p.y}`).join(' ') + ' Z';
-    });
-
-    return (
-        <div className="relative w-full h-full flex items-center justify-center">
-            <svg width={size} height={size} className="overflow-visible">
-                {webs.map((path, i) => (
-                    <path key={i} d={path} fill="none" stroke="#F1F5F9" strokeWidth="1.5" />
-                ))}
-                
-                {skills.map((_, i) => {
-                    const end = getCoords(100, i);
-                    return <line key={i} x1={center} y1={center} x2={end.x} y2={end.y} stroke="#F1F5F9" strokeWidth="1.5" />;
-                })}
-
-                <path d={dataPath} fill="rgba(79, 70, 229, 0.2)" stroke="#4F46E5" strokeWidth="2.5" />
-                
-                {dataPoints.map((p, i) => (
-                    <circle key={i} cx={p.x} cy={p.y} r="4" fill="#4F46E5" stroke="white" strokeWidth="2" className="hover:scale-150 transition-transform cursor-pointer">
-                        <title>{skills[i].name}: {skills[i].value}%</title>
-                    </circle>
-                ))}
-
-                {skills.map((s, i) => {
-                    const coords = getCoords(120, i);
-                    return (
-                        <text 
-                            key={i} 
-                            x={coords.x} 
-                            y={coords.y} 
-                            textAnchor="middle" 
-                            dominantBaseline="middle" 
-                            className="text-[10px] font-bold fill-slate-500 uppercase"
-                        >
-                            {s.name}
-                        </text>
-                    );
-                })}
-            </svg>
-        </div>
-    );
-};
-
-// ... CoursePerformanceChart and ConsistencyGrid remain the same ...
-// 5. Modern Course Progress Chart (Capsule Bars)
-const CoursePerformanceChart = () => {
-    const courses = [
-        { name: 'React', progress: 85, hours: 12 },
-        { name: 'Adv. CSS', progress: 60, hours: 8 },
-        { name: 'System', progress: 30, hours: 15 },
-        { name: 'Algorithms', progress: 92, hours: 20 },
-        { name: 'Node.js', progress: 45, hours: 6 },
-        { name: 'UX Principles', progress: 75, hours: 10 },
-        { name: 'Python', progress: 55, hours: 14 },
-        { name: 'SQL', progress: 40, hours: 5 },
-    ];
-
-    const maxHours = 25;
-    
-    return (
-        <div className="w-full h-full flex flex-col justify-end">
-            <div className="flex-1 flex items-end justify-between gap-4 md:gap-12 px-2">
-                {courses.map((course, i) => (
-                    <div key={i} className="flex-1 flex flex-col items-center gap-3 group relative h-full justify-end min-w-[40px]">
-                        
-                        {/* Hover Details */}
-                        <div className="absolute bottom-full mb-3 opacity-0 group-hover:opacity-100 transition-all duration-300 transform translate-y-2 group-hover:translate-y-0 z-20 pointer-events-none">
-                            <div className="bg-slate-900 text-white text-xs p-3 rounded-xl shadow-xl whitespace-nowrap">
-                                <p className="font-bold mb-1">{course.name}</p>
-                                <div className="flex gap-3 text-[10px] text-slate-300">
-                                    <span>{course.progress}% Complete</span>
-                                    <span className="text-amber-400">{course.hours}h</span>
-                                </div>
-                            </div>
-                            <div className="w-0 h-0 border-l-[6px] border-l-transparent border-r-[6px] border-r-transparent border-t-[6px] border-t-slate-900 mx-auto mt-[-1px]"></div>
-                        </div>
-
-                        <div className="w-full max-w-[48px] relative flex items-end justify-center h-[80%]">
-                            {/* Background Track */}
-                            <div className="absolute inset-0 bg-slate-50 rounded-2xl border border-slate-100"></div>
-                            
-                            {/* Progress Capsule */}
-                            <div 
-                                className="w-full mx-1 mb-1 bg-indigo-500 rounded-xl transition-all duration-1000 ease-out relative z-10 shadow-lg shadow-indigo-500/20 group-hover:bg-indigo-600"
-                                style={{ height: `${course.progress}%` }}
-                            >
-                                <div className="absolute inset-0 bg-gradient-to-t from-white/20 to-transparent rounded-xl"></div>
-                            </div>
-                            
-                            {/* Hours Marker */}
-                            <div 
-                                className="absolute w-[140%] h-[3px] bg-amber-400 z-20 rounded-full shadow-sm group-hover:h-[4px] transition-all"
-                                style={{ bottom: `${(course.hours / maxHours) * 100}%` }}
-                            ></div>
-                        </div>
-
-                        {/* Label */}
-                        <span className="text-[10px] font-bold text-slate-400 group-hover:text-indigo-600 transition-colors truncate w-full text-center">
-                            {course.name}
-                        </span>
-                    </div>
-                ))}
-            </div>
-            
-            {/* Custom Legend */}
-            <div className="flex items-center justify-center gap-8 mt-6">
-                <div className="flex items-center gap-2">
-                    <div className="w-3 h-3 bg-indigo-500 rounded-md"></div>
-                    <span className="text-xs text-slate-500 font-medium">Completion Rate</span>
+const SubjectPerformanceChart = ({ subjects }: { subjects: any[] }) => (
+    <div className="w-full h-full flex items-end justify-between px-2 pb-8 gap-8">
+        {subjects.length === 0 && <div className="text-slate-300 text-sm italic w-full text-center">No data available</div>}
+        {subjects.map((sub, i) => (
+            <div key={i} className="flex-1 flex flex-col items-center gap-4 group relative h-full justify-end min-w-[50px]">
+                <div className="w-[45%] h-full bg-slate-50 rounded-full relative overflow-hidden">
+                    <div className="absolute bottom-0 w-full bg-indigo-500 rounded-full transition-all duration-1000" style={{ height: `${sub.value}%` }}></div>
                 </div>
-                <div className="flex items-center gap-2">
-                    <div className="w-8 h-[3px] bg-amber-400 rounded-full"></div>
-                    <span className="text-xs text-slate-500 font-medium">Time Invested</span>
-                </div>
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-tighter truncate w-full text-center">{sub.name}</span>
             </div>
-        </div>
-    );
-};
+        ))}
+    </div>
+);
 
-// 3. Consistency Grid (Responsive Heatmap)
-const ConsistencyGrid = () => {
-    // Generate a visual grid pattern
-    const days = 7;
-    const weeks = 24; 
-    const grid = [];
+const AssessmentHeatmap = ({ dailyData = {} }: { dailyData?: Record<string, number> }) => {
+    // Generate dates for last 24 weeks
+    const weeks = [];
+    const today = new Date();
     
-    for (let w = 0; w < weeks; w++) {
+    for (let w = 23; w >= 0; w--) {
         const week = [];
-        for (let d = 0; d < days; d++) {
-            const rand = Math.random();
-            let level = 0; 
-            if (rand > 0.8) level = 3; 
-            else if (rand > 0.6) level = 2; 
-            else if (rand > 0.4) level = 1; 
-            week.push(level);
+        for (let d = 0; d < 7; d++) {
+            const date = new Date(today);
+            date.setDate(today.getDate() - (w * 7 + (6 - d)));
+            const dateStr = date.toISOString().split('T')[0];
+            const count = dailyData[dateStr] || 0;
+            // 0 -> 0, 1 -> 1, 2-3 -> 2, 4+ -> 3
+            const level = count === 0 ? 0 : count === 1 ? 1 : count < 4 ? 2 : 3;
+            week.push({ level, date: dateStr });
         }
-        grid.push(week);
+        weeks.push(week);
     }
 
-    const getColor = (level: number) => {
-        switch(level) {
-            case 3: return 'bg-indigo-600';
-            case 2: return 'bg-indigo-400';
-            case 1: return 'bg-indigo-200';
-            default: return 'bg-slate-100';
-        }
-    };
-
     return (
-        <div className="w-full overflow-hidden">
-            <div className="flex gap-[3px] w-full justify-between">
-                {grid.map((week, i) => (
-                    <div key={i} className="flex flex-col gap-[3px] flex-1">
-                        {week.map((day, j) => (
-                            <div 
-                                key={`${i}-${j}`} 
-                                className={`aspect-square rounded-[2px] w-full ${getColor(day)} transition-all hover:scale-110 hover:border hover:border-black/10 cursor-pointer`}
-                                title="Study Activity"
-                            ></div>
-                        ))}
-                    </div>
-                ))}
-            </div>
+        <div className="w-full flex gap-[4px] justify-between h-[120px]">
+            {weeks.map((week, w) => (
+                <div key={w} className="flex-1 flex flex-col gap-[4px]">
+                    {week.map((day, d) => (
+                        <div 
+                           key={d} 
+                           title={`${day.date}: ${dailyData[day.date] || 0} exams`}
+                           className={`flex-1 rounded-[3px] ${['bg-slate-50', 'bg-indigo-200', 'bg-indigo-400', 'bg-indigo-600'][day.level]} transition-all hover:scale-110 cursor-pointer`}
+                        ></div>
+                    ))}
+                </div>
+            ))}
         </div>
     );
 };
