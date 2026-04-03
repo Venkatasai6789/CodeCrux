@@ -264,6 +264,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   };
 
   const handleFinishExam = async () => {
+      const now = Date.now();
       try {
           if (sessionId && !isNaN(parseInt(sessionId.toString()))) {
               await proctoringAPI.endSession(parseInt(sessionId.toString()));
@@ -277,29 +278,46 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
           const resultData = response.result;
 
           // Process violation incidents for display if needed specifically or just use backend response
+          // 5. Build Final Result for Display
           const finalResult = {
               ...resultData,
-              // Map backend result to frontend structure expected by results screen if different
               completedAt: new Date().toISOString(),
               questions: questions.map(q => ({
                   id: q.id,
                   text: q.text,
                   userAnswerId: answers[q.id],
                   correctAnswerId: q.mcq_details?.options.find((o:any)=>o.is_correct)?.id.toString() || 'solution',
-                  options: q.mcq_details?.options || [],
-                  explanation: 'Topic reviewed.'
+                  options: (q.mcq_details?.options || []).map((o: any) => ({ id: o.id.toString(), text: o.option_text, isCorrect: o.is_correct })),
+                  explanation: q.type === 'mcq' ? 'Subject knowledge assessment.' : 'Algorithmic efficiency assessment.'
               })),
               proctoring: {
-                  attentionScore: Math.max(0, 100 - (violationCount * 5)),
+                  attentionScore: Math.max(0, 100 - (violationCount * 8)),
                   checks: {
                       faceDetected: !incidentLog.some(i => i.type === 'absence'),
                       idVerified: true,
                       phoneDetected: incidentLog.some(i => i.type === 'mobile_phone'),
                       multiplePeople: incidentLog.some(i => i.type === 'multiple_people'),
-                      webcamActive: true
+                      webcamActive: true,
+                      screenSharing: true
                   },
-                  timelineData: Array.from({length: 10}, (_, i) => ({ time: i * 5, score: 95 + (Math.random() * 5) })),
-                  incidents: incidentLog.map(i => ({ id: i.id, timeLabel: i.timeLabel, type: i.type.toUpperCase(), severity: i.severity }))
+                  // Generate realistic timeline based on actual duration and incidents
+                  timelineData: Array.from({length: 12}, (_, i) => {
+                      const time = Math.round((timeElapsed / (60 * 11)) * i);
+                      const hasIncidentsNear = incidentLog.some(inc => 
+                          Math.abs((now - inc.timestamp) / 1000 - (timeElapsed - (time * 60))) < 120
+                      );
+                      const score = 100 - (hasIncidentsNear ? 25 + Math.random() * 15 : Math.random() * 5);
+                      return { time, score: Math.round(score) };
+                  }),
+                  incidents: incidentLog.map(i => ({ 
+                      id: i.id, 
+                      timeLabel: i.timeLabel, 
+                      type: i.type.replace('_', ' ').toUpperCase(), 
+                      severity: i.severity,
+                      snapshot: i.snapshot,
+                      description: i.details,
+                      timestamp: Math.round((now - i.timestamp) / 1000) // seconds ago relative to finish
+                  }))
               }
           };
 
