@@ -34,51 +34,85 @@ class ProctoringViolationViewSet(viewsets.ModelViewSet):
         enrollment_id = request.data.get('enrollment_id')
         description = request.data.get('description', '')
         severity = request.data.get('severity', 'medium')
+        detections = request.data.get('detections', {})
+        import json
+        if isinstance(detections, str):
+            try: detections = json.loads(detections)
+            except: detections = {}
+            
         snapshot_data = request.data.get('snapshot') # Expect base64 from front-end
 
         try:
+            # Ensure an active session exists for this enrollment to attach logs/activities
+            session, _ = ExamSession.objects.get_or_create(
+                enrollment_id=enrollment_id,
+                defaults={
+                    'status': 'active',
+                    'ip_address': request.META.get('REMOTE_ADDR'),
+                    'user_agent': request.META.get('HTTP_USER_AGENT', '')
+                }
+            )
+
             violation = ProctoringViolation.objects.create(
                 enrollment_id=enrollment_id,
                 violation_type=violation_type,
                 description=description,
-                severity=severity
+                severity=severity,
+                detections=detections
             )
 
             # --- Organized Snapshot Storage Execution (Standardized) ---
-            if snapshot_data and ';base64,' in snapshot_data:
+            if snapshot_data:
                 try:
-                    format, imgstr = snapshot_data.split(';base64,')
-                    ext = format.split('/')[-1]
-                    image_content = base64.b64decode(imgstr)
+                    # Clean up base64 string
+                    if ';base64,' in snapshot_data:
+                        format, imgstr = snapshot_data.split(';base64,')
+                        ext = format.split('/')[-1].split(';')[0]
+                    else:
+                        imgstr = snapshot_data
+                        ext = 'png'
                     
-                    # Using ContentFile allows Django to handle storage and dynamic pathing
-                    filename = f"evidence.{ext}"
+                    image_content = base64.b64decode(imgstr)
+                    filename = f"capture_{timezone.now().strftime('%H%M%S')}.{ext}"
                     violation.evidence_screenshot.save(filename, ContentFile(image_content), save=False)
                 except Exception as img_err:
-                    print(f"Error processing base64 snapshot: {img_err}")
+                    print(f"Error saving snapshot: {img_err}")
 
-            # Handle direct file uploads if present (standard multipart)
             if 'evidence_screenshot' in request.FILES:
                 violation.evidence_screenshot = request.FILES['evidence_screenshot']
             
-            if 'evidence_video_frame' in request.FILES:
-                violation.evidence_video_frame = request.FILES['evidence_video_frame']
-            
             violation.save()
 
-            # Update enrollment violation metrics
+            # Update enrollment violation metrics & Integrity Score Sync
             enrollment = violation.enrollment
-            enrollment.total_violations += 1
-            # Auto-block if over threshold
-            if enrollment.total_violations >= enrollment.exam.violation_threshold:
-                # Actual logic could lock the exam session
-                pass
+            enrollment.total_violations = ProctoringViolation.objects.filter(enrollment=enrollment).count()
+            
+            violations = ProctoringViolation.objects.filter(enrollment=enrollment)
+            high = violations.filter(severity='high').count() * 20
+            med = violations.filter(severity='medium').count() * 10
+            low = violations.filter(severity='low').count() * 5
+            enrollment.integrity_score = max(0, 100 - (high + med + low))
             enrollment.save()
 
-            serializer = ProctoringViolationSerializer(violation)
+            # Create an ActivityLog entry
+            ActivityLog.objects.create(
+                session=session,
+                activity_type='violation_detected',
+                description=f"AI ALERT: {violation.get_violation_type_display()} - {description}",
+                metadata={
+                    'violation_id': violation.id,
+                    'type': violation_type,
+                    'severity': severity
+                }
+            )
+
+            serializer = ProctoringViolationSerializer(violation, context={'request': request})
             return Response(serializer.data, status=status.HTTP_201_CREATED)
         except Exception as e:
+            print(f"Error in report_violation: {e}")
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+
 
     @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
     def clear_violations(self, request):

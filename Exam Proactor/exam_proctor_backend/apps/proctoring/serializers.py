@@ -12,7 +12,7 @@ class ProctoringViolationSerializer(serializers.ModelSerializer):
         fields = [
             'id', 'enrollment', 'violation_type', 'violation_type_display',
             'description', 'severity', 'evidence_screenshot', 'evidence_video_frame',
-            'detected_at', 'reviewed', 'reviewer_notes', 'student_name'
+            'detections', 'detected_at', 'reviewed', 'reviewer_notes', 'student_name'
         ]
         read_only_fields = ['id', 'detected_at']
 
@@ -31,7 +31,7 @@ class ScreenCaptureSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'timestamp']
 
 class ExamSessionSerializer(serializers.ModelSerializer):
-    violations = ProctoringViolationSerializer(many=True, read_only=True)
+    violations = ProctoringViolationSerializer(source='enrollment.violations', many=True, read_only=True)
     activities = ActivityLogSerializer(many=True, read_only=True)
     screen_captures = ScreenCaptureSerializer(many=True, read_only=True)
     student_name = serializers.CharField(source='enrollment.student.get_full_name', read_only=True)

@@ -65,7 +65,9 @@ class ExamViewSet(viewsets.ModelViewSet):
     def get_queryset(self):
         user = self.request.user
 
-        if user.role == 'instructor' or user.role == 'admin':
+        if user.role == 'admin':
+            queryset = Exam.objects.all()
+        elif user.role == 'instructor':
             queryset = Exam.objects.filter(instructor=user)
         else:
             status_param = self.request.query_params.get('status')
@@ -113,6 +115,18 @@ class ExamViewSet(viewsets.ModelViewSet):
             enrollment.save()
             return Response({'message': 'Exam started', 'enrollment': ExamEnrollmentSerializer(enrollment).data})
         except ExamEnrollment.DoesNotExist:
+            return Response({'error': 'You are not enrolled in this exam.'}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def check_status(self, request, pk=None):
+        """Check current student's enrollment status (is_blocked, status, etc.)."""
+        exam = self.get_object()
+        try:
+            enrollment = ExamEnrollment.objects.get(exam=exam, student=request.user)
+            serializer = ExamEnrollmentSerializer(enrollment)
+            return Response(serializer.data)
+        except ExamEnrollment.DoesNotExist:
+            return Response({'error': 'Not enrolled'}, status=status.HTTP_404_NOT_FOUND)
             return Response({'error': 'Not enrolled in this exam'}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
@@ -124,14 +138,30 @@ class ExamViewSet(viewsets.ModelViewSet):
         
         answers = data.get('answers', {})
         time_taken_seconds = data.get('time_taken_seconds', 0)
+        is_auto_submit = data.get('is_auto_submit', False)
         
         try:
             with transaction.atomic():
                 enrollment = ExamEnrollment.objects.select_for_update().get(exam=exam, student=user)
                 
-                if enrollment.status in ['completed', 'submitted'] and not exam.allow_multiple_attempts:
-                    return Response({'error': 'Exam already completed'}, status=status.HTTP_400_BAD_REQUEST)
-                
+                # Graceful handling of already submitted exams
+                if enrollment.status in ['completed', 'submitted']:
+                    if not exam.allow_multiple_attempts:
+                        # Return existing result instead of 400 error to avoid frontend confusion
+                        return Response({
+                            'message': 'Exam already completed',
+                            'is_already_submitted': True,
+                            'result': {
+                                'examTitle': exam.title,
+                                'score': round(enrollment.percentage, 2),
+                                'status': enrollment.status,
+                                'result': enrollment.result,
+                            }
+                        })
+
+                if enrollment.is_blocked:
+                    return Response({'error': 'You have been blocked from this exam by the admin.'}, status=status.HTTP_403_FORBIDDEN)
+
                 # 1. Process all answers and calculate score
                 total_earned_marks = 0
                 correct_count = 0
@@ -157,7 +187,9 @@ class ExamViewSet(viewsets.ModelViewSet):
                             mcq_submission, _ = MCQSubmission.objects.get_or_create(submission=submission)
                             if user_answer:
                                 try:
-                                    selected_option = MCQOption.objects.get(id=user_answer, mcq_question=mcq_question)
+                                    # Handle both string and int option IDs
+                                    option_id = int(str(user_answer))
+                                    selected_option = MCQOption.objects.get(id=option_id, mcq_question=mcq_question)
                                     mcq_submission.selected_option = selected_option
                                     mcq_submission.save()
                                     
@@ -168,18 +200,14 @@ class ExamViewSet(viewsets.ModelViewSet):
                                     else:
                                         # Apply negative marking if any
                                         marks_obtained = -exam.negative_marking
-                                except MCQOption.DoesNotExist:
+                                except (MCQOption.DoesNotExist, ValueError, TypeError):
                                     pass
                     
                     elif question.question_type == 'coding':
-                        # For coding, we assume it was already tested via execute_code or here we just store the last code
                         coding_submission, _ = CodingSubmission.objects.get_or_create(submission=submission)
                         if user_answer:
-                            coding_submission.submitted_code = user_answer
+                            coding_submission.submitted_code = str(user_answer)
                             coding_submission.save()
-                            # Logic for auto-grading coding can be complex (running test cases), 
-                            # for now we'll mark as submitted. 
-                            # You might want to use the last execution result if stored.
                         
                     submission.is_correct = is_correct
                     submission.marks_obtained = marks_obtained
@@ -188,20 +216,22 @@ class ExamViewSet(viewsets.ModelViewSet):
                     total_earned_marks += marks_obtained
 
                 # 2. Apply Violation Reductions
-                # Get current violation count if not already final
                 violations = enrollment.violations.all()
                 violation_count = violations.count()
                 
-                # If violation count > threshold, calculate reduction
                 score_reduction_pct = 0
-                if violation_count >= exam.violation_threshold:
-                    # Reduction from exam settings: reduction_per_violation (this is percentage or fixed?)
-                    # The model says score_reduction_per_violation is a float. 
-                    # Let's treat it as percentage of total marks.
+                if violation_count >= exam.violation_threshold and exam.violation_threshold > 0:
                     score_reduction_pct = (violation_count / exam.violation_threshold) * exam.score_reduction_per_violation
                 
                 final_score = total_earned_marks - (exam.total_marks * (score_reduction_pct / 100))
                 final_percentage = (final_score / exam.total_marks) * 100 if exam.total_marks > 0 else 0
+                
+                # --- Advanced Integrity Scoring (Weighted by Severity) ---
+                high_impact = violations.filter(severity='high').count() * 20
+                med_impact = violations.filter(severity='medium').count() * 10
+                low_impact = violations.filter(severity='low').count() * 5
+                integrity_score = max(0, 100 - (high_impact + med_impact + low_impact))
+
                 
                 # 3. Update Enrollment
                 enrollment.status = 'completed'
@@ -213,48 +243,51 @@ class ExamViewSet(viewsets.ModelViewSet):
                 enrollment.total_violations = violation_count
                 enrollment.final_violations = violation_count
                 enrollment.score_reduction = score_reduction_pct
+                enrollment.integrity_score = integrity_score
+                enrollment.is_auto_submitted = is_auto_submit
                 enrollment.save()
                 
                 # 4. End Session if exists
                 try:
                     from exam_proctor_backend.apps.proctoring.models import ExamSession
-                    session = ExamSession.objects.get(enrollment=enrollment)
-                    session.status = 'ended'
-                    session.session_end = enrollment.submitted_at
-                    session.save()
-                except:
+                    session = ExamSession.objects.filter(enrollment=enrollment).first()
+                    if session:
+                        session.status = 'ended'
+                        session.session_end = enrollment.submitted_at
+                        session.save()
+                except Exception:
                     pass
 
                 # Gather violation evidence
                 violation_data = []
-                for v in violations:
-                    violation_item = {
+                for v in violations[:10]:
+                    violation_data.append({
                         'id': v.id,
                         'type': v.violation_type,
                         'severity': v.severity,
                         'detected_at': v.detected_at,
                         'screenshot': v.evidence_screenshot.url if v.evidence_screenshot else None
-                    }
-                    violation_data.append(violation_item)
+                    })
 
                 return Response({
                     'message': 'Exam completed successfully',
                     'result': {
                         'examTitle': exam.title,
-                        'score': enrollment.percentage,
+                        'score': round(enrollment.percentage, 2),
                         'totalQuestions': questions.count(),
                         'correctAnswers': correct_count,
                         'timeSpent': f"{time_taken_seconds // 60}m {time_taken_seconds % 60}s",
                         'status': enrollment.status,
                         'result': enrollment.result,
-                        'violations': violation_data
+                        'integrity_score': enrollment.integrity_score,
+                        'violations': violation_data,
+                        'is_auto_submitted': enrollment.is_auto_submitted
                     }
                 })
-                
         except ExamEnrollment.DoesNotExist:
             return Response({'error': 'Not enrolled in this exam'}, status=status.HTTP_400_BAD_REQUEST)
         except Exception as e:
-            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my_exams(self, request):
@@ -440,16 +473,37 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         try:
             with transaction.atomic():
-                # 1. Create Exam
+                # 1. Parse datetime fields properly
+                from django.utils.dateparse import parse_datetime
+                duration_minutes = int(data.get('duration_minutes', 60))
+
+                raw_start = data.get('start_time')
+                if isinstance(raw_start, str):
+                    start_time = parse_datetime(raw_start) or timezone.now()
+                else:
+                    start_time = raw_start or timezone.now()
+                # Ensure timezone-aware
+                if timezone.is_naive(start_time):
+                    start_time = timezone.make_aware(start_time)
+
+                raw_end = data.get('end_time')
+                if raw_end:
+                    end_time = parse_datetime(raw_end) if isinstance(raw_end, str) else raw_end
+                    if timezone.is_naive(end_time):
+                        end_time = timezone.make_aware(end_time)
+                else:
+                    end_time = start_time + timedelta(minutes=duration_minutes)
+
+                # 2. Create Exam
                 exam = Exam.objects.create(
                     title=data.get('title', 'Untitled Exam'),
                     description=data.get('description', ''),
                     course_id=data.get('course_id'),
                     course_name=data.get('course_name', ''),
                     instructor=user,
-                    start_time=data.get('start_time', timezone.now()),
-                    end_time=data.get('end_time', timezone.now() + timedelta(hours=2)),
-                    duration_minutes=int(data.get('duration_minutes', 60)),
+                    start_time=start_time,
+                    end_time=end_time,
+                    duration_minutes=duration_minutes,
                     status=data.get('status', 'published'),
                     total_marks=float(data.get('total_marks', 100)),
                     passing_marks=float(data.get('passing_marks', 40))
@@ -507,11 +561,13 @@ class ExamViewSet(viewsets.ModelViewSet):
         """Get detailed results for an exam including all students, scores, and violations."""
         exam = self.get_object()
         
-        # Security check: Only instructor or admin
-        if request.user.role not in ['instructor', 'admin']:
-            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
-            
-        enrollments = ExamEnrollment.objects.filter(exam=exam).select_related('student')
+        # Security check: Allow instructors/admins for all, students for their own record
+        if request.user.role in ['instructor', 'admin']:
+            enrollments = ExamEnrollment.objects.filter(exam=exam).select_related('student')
+        else:
+            enrollments = ExamEnrollment.objects.filter(exam=exam, student=request.user).select_related('student')
+            if not enrollments.exists():
+                return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
         
         results = []
         for enrollment in enrollments:
@@ -530,15 +586,31 @@ class ExamViewSet(viewsets.ModelViewSet):
                 'status': enrollment.status,
                 'time_taken': enrollment.time_taken_seconds,
                 'violations_count': enrollment.total_violations,
+                'integrity_score': enrollment.integrity_score,
+                'is_blocked': enrollment.is_blocked,
+                'is_auto_submitted': enrollment.is_auto_submitted,
                 'has_session': session is not None
             }
             
             if session:
                 # Add detailed session data for violations and logs
-                session_serializer = ExamSessionSerializer(session)
+                session_serializer = ExamSessionSerializer(session, context={'request': request})
                 student_data['session'] = session_serializer.data
+                
+                # Direct Activity inclusion for dynamic stream
+                from exam_proctor_backend.apps.proctoring.serializers import ActivityLogSerializer
+                activities_qs = session.activities.all()
+                student_data['activities'] = ActivityLogSerializer(activities_qs, many=True).data
+            else:
+                student_data['session'] = None
+                student_data['activities'] = []
+
+            # Direct Violation inclusion for Integrity Log (Robust fallback)
+            violations_qs = enrollment.violations.all()
+            student_data['violations'] = ProctoringViolationSerializer(violations_qs, many=True, context={'request': request}).data
             
             results.append(student_data)
+
             
         # Calculate summary stats
         stats = enrollments.aggregate(
@@ -572,6 +644,89 @@ class ExamViewSet(viewsets.ModelViewSet):
             },
             'students': results
         })
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def block_enrollment(self, request, pk=None):
+        """Block a student from a specific exam."""
+        if request.user.role not in ['instructor', 'admin']:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        student_id = request.data.get('student_id')
+        if not student_id:
+            return Response({'error': 'student_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            enrollment = ExamEnrollment.objects.get(exam_id=pk, student_id=student_id)
+            enrollment.is_blocked = True
+            enrollment.save()
+            return Response({'message': 'Student blocked successfully', 'is_blocked': True})
+        except ExamEnrollment.DoesNotExist:
+            return Response({'error': 'Enrollment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def unblock_enrollment(self, request, pk=None):
+        """Unblock a student from a specific exam."""
+        if request.user.role not in ['instructor', 'admin']:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+        
+        student_id = request.data.get('student_id')
+        if not student_id:
+            return Response({'error': 'student_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+            
+        try:
+            enrollment = ExamEnrollment.objects.get(exam_id=pk, student_id=student_id)
+            enrollment.is_blocked = False
+            enrollment.save()
+            return Response({'message': 'Student unblocked successfully', 'is_blocked': False})
+        except ExamEnrollment.DoesNotExist:
+            return Response({'error': 'Enrollment not found'}, status=status.HTTP_404_NOT_FOUND)
+
+
+    @action(detail=False, methods=['post'], permission_classes=[IsAuthenticated])
+    def generate_ai_content(self, request):
+        """
+        Extracts transcript from a YouTube URL and generates exam questions via Gemini AI.
+        Returns AI-structured MCQs and Coding tasks.
+        """
+        data = request.data
+        youtube_url = data.get('youtube_url')
+        difficulty = data.get('difficulty', 'Intermediate')
+        count = int(data.get('count', 5))
+        include_coding = data.get('include_coding', True)
+
+        if not youtube_url:
+            return Response({'error': 'YouTube URL is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            from .youtube import fetch_transcript, generate_exam_content
+            
+            # 1. Fetch transcript
+            print(f"Fetching transcript for: {youtube_url}")
+            transcript = fetch_transcript(youtube_url)
+            
+            if not transcript:
+                return Response({'error': 'Could not extract transcript from this video.'}, 
+                                status=status.HTTP_400_BAD_REQUEST)
+            
+            # 2. Generate questions
+            print(f"Generating {count} questions (difficulty: {difficulty})...")
+            questions = generate_exam_content(transcript, difficulty, count, include_coding)
+            
+            if not questions:
+                return Response({
+                    'error': 'Gemini AI failed to generate valid structured questions. This can happen if the transcript is too short or technical. Please try again or with a different video.'
+                }, status=status.HTTP_422_UNPROCESSABLE_ENTITY)
+            
+            return Response({
+                'success': True,
+                'questions': questions,
+                'transcript_length': len(transcript)
+            })
+
+        except Exception as e:
+            import traceback
+            print(traceback.format_exc())
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class ExamEnrollmentViewSet(viewsets.ModelViewSet):

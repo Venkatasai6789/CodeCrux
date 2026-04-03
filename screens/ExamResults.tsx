@@ -62,60 +62,69 @@ export const ExamResultsScreen: React.FC<ExamResultsProps> = ({ onNavigate }) =>
             </p>
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
-            {/* Left: Main Score */}
-            <div className="lg:col-span-2 space-y-6">
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
-                    <div className="flex flex-col md:flex-row items-center gap-12">
-                        <ResultsScoreRing score={result.score} status={result.score >= 40 ? 'passed' : 'failed'} />
+        <div className="flex flex-col gap-8">
+            {/* Top Stats Section */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                {/* Score Section */}
+                <div className="lg:col-span-2 bg-white rounded-3xl border border-slate-200 shadow-sm p-8 lg:p-10">
+                    <div className="flex flex-col md:flex-row items-center gap-12 h-full">
+                        <ResultsScoreRing score={result.score || 0} status={result.score >= 40 ? 'passed' : 'failed'} />
                         
-                        <div className="flex-1 grid grid-cols-1 gap-6 w-full">
+                        <div className="flex-1 flex flex-col gap-5 w-full mt-6 md:mt-0">
                             <StatBox 
                                 icon={CheckCircle} 
                                 color="text-emerald-500" 
-                                value={`${result.correctAnswers}/${result.totalQuestions}`} 
+                                value={`${result.correctAnswers || 0}/${result.totalQuestions || 0}`} 
                                 label="Questions Correct" 
                             />
                             <StatBox 
                                 icon={Clock} 
                                 color="text-indigo-500" 
-                                value={result.timeSpent} 
+                                value={result.timeSpent || 'N/A'} 
                                 label="Total Time Taken" 
                             />
                         </div>
                     </div>
                 </div>
 
-                {/* Review Section */}
-                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
-                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
-                         <h3 className="font-bold text-slate-800 text-sm italic">Question Breakdown</h3>
-                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Review your performance</span>
+                {/* Certificate Section */}
+                <div className="bg-indigo-900 text-white p-8 rounded-3xl shadow-xl relative overflow-hidden group flex flex-col justify-between min-h-[250px]">
+                    <div className="absolute top-0 right-0 p-6 opacity-10 group-hover:scale-110 transition-transform duration-700">
+                        <BarChart className="w-24 h-24" />
                     </div>
-                    <QuestionReviewAccordion questions={result.questions} />
-                </div>
-            </div>
-
-            {/* Right: Proctoring Insights */}
-            <div className="space-y-6">
-                <ProctoringReport session={result.proctoring} />
-                
-                <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden group">
-                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
-                        <BarChart className="w-16 h-16" />
+                    <div className="relative z-10">
+                        <h4 className="text-xl font-black mb-3">Certificate of Integrity</h4>
+                        <p className="text-xs text-indigo-200 leading-relaxed font-medium max-w-[200px]">
+                            This exam was completed under secure proctoring conditions. Your verified digital certificate is now available.
+                        </p>
                     </div>
-                    <h4 className="font-bold mb-2">Certificate of Integrity</h4>
-                    <p className="text-[11px] text-indigo-200 leading-relaxed mb-4">
-                        This exam was completed under secure proctoring conditions. A digital certificate is now available for download.
-                    </p>
-                    <button className="w-full bg-white text-indigo-900 py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2">
+                    <button className="w-full bg-white text-indigo-900 py-3.5 rounded-2xl font-black text-[11px] uppercase tracking-widest mt-6 hover:bg-slate-50 transition-colors shadow-lg flex items-center justify-center gap-2 relative z-10 hover:scale-[1.02] active:scale-95 duration-200">
                         <Download className="w-4 h-4" /> Download Certificate
                     </button>
                 </div>
+            </div>
 
+            {/* AI Proctoring Details - FULL WIDTH to resolve overlaps */}
+            <div className="w-full">
+                <ProctoringReport session={result.proctoring} />
+            </div>
+
+            {/* Detailed Question Review */}
+            <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+                <div className="px-8 py-6 border-b border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                     <h3 className="text-lg font-black text-slate-800 tracking-tight">Question Breakdown</h3>
+                     <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest bg-white px-3 py-1.5 rounded-xl border border-slate-100 shadow-sm">Review your performance</span>
+                </div>
+                <div className="p-4 sm:p-6 bg-slate-50">
+                    <QuestionReviewAccordion questions={result.questions || []} />
+                </div>
+            </div>
+
+            {/* Navigation */}
+            <div className="flex justify-center mt-4">
                 <button 
                   onClick={() => onNavigate('/dashboard')}
-                  className="w-full bg-white border border-slate-200 text-slate-600 py-4 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+                  className="bg-white border-2 border-slate-200 text-slate-600 px-10 py-4 rounded-[2rem] font-black text-[11px] uppercase tracking-widest hover:border-indigo-200 hover:text-indigo-600 hover:bg-indigo-50 hover:shadow-lg hover:shadow-indigo-50/50 transition-all duration-300 flex items-center justify-center gap-2"
                 >
                     Return to Dashboard <ArrowRight className="w-4 h-4" />
                 </button>
@@ -128,13 +137,13 @@ export const ExamResultsScreen: React.FC<ExamResultsProps> = ({ onNavigate }) =>
 };
 
 const StatBox = ({ icon: Icon, color, value, label }: { icon: any, color: string, value: string, label: string }) => (
-    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50/50 border border-slate-100">
-        <div className={`p-3 rounded-xl bg-white shadow-sm ${color}`}>
-            <Icon className="w-5 h-5" />
+    <div className="flex items-center gap-4 p-4 lg:p-5 rounded-3xl bg-slate-50/80 border border-slate-100 w-full transition-all duration-300 hover:shadow-md hover:border-slate-200">
+        <div className={`p-3 lg:p-4 rounded-2xl bg-white shadow-sm ring-1 ring-slate-100 flex items-center justify-center shrink-0 ${color}`}>
+            <Icon className="w-5 h-5 lg:w-6 lg:h-6" />
         </div>
-        <div>
-            <p className="text-[18px] font-bold text-slate-800 leading-none mb-1">{value}</p>
-            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">{label}</p>
+        <div className="flex-1 min-w-0">
+            <p className="text-xl lg:text-[22px] font-black text-slate-800 leading-none mb-1.5 tracking-tight truncate">{value}</p>
+            <p className="text-[9px] lg:text-[10px] font-black text-slate-400 uppercase tracking-widest truncate">{label}</p>
         </div>
     </div>
 );

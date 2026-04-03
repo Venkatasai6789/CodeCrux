@@ -45,14 +45,13 @@ export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', 
   }, [takeSnapshot]);
 
   useEffect(() => {
-    if (!modelLoading && detections.length > 0) {
+    if (!modelLoading) {
       onDetection(detections);
       const face = detections.find(d => d.class === 'face');
       setFaceDetected(!!face);
-    } else if (detections.length === 0) {
-      setFaceDetected(false);
     }
   }, [detections, modelLoading, onDetection]);
+
 
   const activeViolations = detections.filter(d => 
     d.class === 'multiple_people_detected' || 

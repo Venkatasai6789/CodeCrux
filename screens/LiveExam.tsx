@@ -83,7 +83,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   }, [examId, enrollmentId]);
 
   // 3. Proctoring Helper
-  const reportViolation = useCallback(async (type: string, details: string, severity: 'low'|'medium'|'high' = 'medium') => {
+  const reportViolation = useCallback(async (type: string, details: string, severity: 'low'|'medium'|'high' = 'medium', detectionsData?: any) => {
     const now = Date.now();
     // Throttle same-type violations to every 15s, but always catch critical ones
     if (lastViolationTime.current[type] && now - lastViolationTime.current[type] < 15000) return;
@@ -102,6 +102,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
         severity,
         timestamp: now,
         snapshot,
+        detections: detectionsData,
         timeLabel: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
     
@@ -124,6 +125,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
                 violation_type: type, 
                 description: details, 
                 severity,
+                detections: detectionsData || {},
                 snapshot: snapshot || undefined
             }); 
         } catch (e) {
@@ -149,33 +151,39 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
 
   // 5. AI Detection Handler
   const handleAIThreshold = useCallback((detections: any[]) => {
-      // Multiple People
-      if (detections.some(d => d.class === 'multiple_people_detected')) {
-          reportViolation('multiple_people', 'Multiple people detected in frame.', 'high');
-      }
+      if (isSubmitting) return;
+
+      const face = detections.find(d => d.class === 'face');
+      const multiplePeople = detections.find(d => d.class === 'multiple_people_detected');
+      const phone = detections.find(d => d.class === 'cell phone' && d.score > 0.45);
       
-      // Absence
-      if (detections.some(d => d.class === 'no_person')) {
-          reportViolation('absence', 'Candidate absence detected.', 'medium');
+      // Absence Check (No person/face in frame)
+      if (!face && detections.length === 0) {
+          reportViolation('absence', 'Candidate absence detected in assessment environment.', 'medium');
+      }
+
+      // Multiple People
+      if (multiplePeople) {
+          reportViolation('multiple_people', 'Multiple people detected in frame.', 'high', multiplePeople);
       }
       
       // Mobile Phone
-      if (detections.some(d => d.class === 'cell phone' && d.score > 0.45)) {
-          reportViolation('mobile_phone', 'Mobile phone or electronic gadget identified.', 'high');
+      if (phone) {
+          reportViolation('mobile_phone', 'Mobile phone or electronic gadget identified.', 'high', phone);
       }
 
       // Suspicious Objects (Books, Laptops)
       const suspicious = detections.find(d => d.class === 'suspicious_object');
       if (suspicious) {
-          reportViolation('forbidden_item', `Suspicious item (${suspicious.data?.originalClass}) detected in exam environment.`, 'medium');
+          reportViolation('forbidden_item', `Suspicious item (${suspicious.data?.originalClass}) detected in exam environment.`, 'medium', suspicious);
       }
       
       // Face Logic (Rotation & Visibility)
-      const face = detections.find(d => d.class === 'face');
       if (face) {
+
           // 1. Partial Face Detection (Half face)
           if (face.data?.isPartial) {
-              reportViolation('partial_face', 'Partial face detected. Please ensure full face is visible.', 'medium');
+              reportViolation('partial_face', 'Partial face detected. Please ensure full face is visible.', 'medium', face);
           }
           
           // 2. Head Rotation (Left, Right, Down, Up)
@@ -186,7 +194,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
               if (pose === 'left') detail = 'Looking left.';
               if (pose === 'right') detail = 'Looking right.';
               
-              reportViolation('gaze_aversion', detail, 'medium');
+              reportViolation('gaze_aversion', detail, 'medium', face);
           }
       }
   }, [reportViolation]);
@@ -224,17 +232,37 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
     };
   }, [loading, sessionId, reportViolation]);
 
-  // 7. Timer
+  // 7. Timer & Status Polling
   useEffect(() => {
     if (loading || !sessionId || isExamBlocked) return;
+    
+    // Timer interval
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if(prev <= 0) { clearInterval(timer); handleFinishExam(); return 0; }
         return prev - 1;
       });
     }, 1000);
-    return () => clearInterval(timer);
-  }, [loading, sessionId, isExamBlocked]);
+
+    // Status polling interval (check every 10 seconds if blocked by admin)
+    const statusPoll = setInterval(async () => {
+      if (!examId) return;
+      try {
+        const status = await examsAPI.checkStatus(examId);
+        if (status.is_blocked) {
+          console.log("Exam blocked by admin");
+          setIsExamBlocked(true);
+        }
+      } catch (err) {
+        console.error("Status check failed:", err);
+      }
+    }, 10000);
+
+    return () => {
+      clearInterval(timer);
+      clearInterval(statusPoll);
+    };
+  }, [loading, sessionId, isExamBlocked, examId]);
 
   // Handle auto-submit on block
   useEffect(() => {
@@ -276,24 +304,30 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
           const examDuration = (examDetails?.duration_minutes || 60) * 60;
           const timeElapsed = examDuration - timeLeft;
           
-          // 5. Build Final Result for Display (Local first so we have it if API fails)
+          // --- Advanced Integrity Scoring Sync (Weighted) ---
+          const highViolations = incidentLog.filter(i => i.severity === 'high').length;
+          const medViolations = incidentLog.filter(i => i.severity === 'medium').length;
+          const lowViolations = incidentLog.filter(i => i.severity === 'low').length;
+          const localIntegrityScore = Math.max(0, 100 - (highViolations * 20 + medViolations * 10 + lowViolations * 5));
+
           const finalResult = {
               examTitle: examDetails?.title || 'Exam Result',
-              score: 0, // Will be updated if API succeeds
+              score: 0, 
               totalQuestions: questions.length,
-              correctAnswers: 0, // Will be updated if API succeeds
+              correctAnswers: 0, 
               timeSpent: `${Math.floor(timeElapsed / 60)}m ${timeElapsed % 60}s`,
               completedAt: new Date().toISOString(),
               questions: questions.map(q => ({
                   id: q.id,
                   text: q.text,
                   userAnswerId: answers[q.id],
-                  correctAnswerId: 'unknown', // Updated if API succeeds
+                  correctAnswerId: 'unknown',
                   options: (q.mcq_details?.options || []).map((o: any) => ({ id: o.id.toString(), text: o.option_text, isCorrect: o.is_correct })),
                   explanation: q.type === 'mcq' ? 'Subject knowledge assessment.' : 'Algorithmic efficiency assessment.'
               })),
               proctoring: {
-                  attentionScore: Math.max(0, 100 - (violationCount * 8)),
+                  attentionScore: localIntegrityScore,
+
                   checks: {
                       faceDetected: !incidentLog.some(i => i.type === 'absence'),
                       idVerified: true,
@@ -323,7 +357,8 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
           };
 
           try {
-              const response = await examsAPI.submitExam(examId!, answers, timeElapsed);
+              const isAuto = isExamBlocked || timeLeft <= 0 || violationCount >= maxViolations;
+              const response = await examsAPI.submitExam(examId!, answers, timeElapsed, isAuto);
               const resultData = response.result;
               
               // Update with real backend data
@@ -332,7 +367,11 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
                   ...resultData,
                   score: resultData.score,
                   correctAnswers: resultData.correctAnswers,
-                  status: resultData.status
+                  status: resultData.status,
+                  proctoring: {
+                      ...finalResult.proctoring,
+                      attentionScore: resultData.integrity_score
+                  }
               };
 
               localStorage.setItem('last_exam_result', JSON.stringify(serverResult));

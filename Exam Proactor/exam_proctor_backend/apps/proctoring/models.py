@@ -1,35 +1,64 @@
 from django.db import models
 from exam_proctor_backend.apps.exams.models import ExamEnrollment
 import os
+import re
 from django.utils import timezone
+
 
 def violation_screenshot_path(instance, filename):
     """
-    Dynamic path: media/violations/{username}/{exam_title}/screenshot_{timestamp}.{ext}
+    Dynamic path: media/violations/{student_fullname}/{course_title}_{exam_title}/screenshot_{timestamp}.{ext}
     """
+    def sanitize(text):
+        if not text:
+            return "unknown"
+        return re.sub(r'[^a-zA-Z0-9\s_]', '', text).strip().replace(' ', '_').lower()
+
     ext = filename.split('.')[-1]
-    username = instance.enrollment.student.username
-    exam_title = instance.enrollment.exam.title.replace(' ', '_').lower()
+    student = instance.enrollment.student
+    
+    # Try to get full name, fallback to username
+    full_name = f"{student.first_name} {student.last_name}".strip()
+    student_dir = sanitize(full_name if full_name else student.username)
+    
+    # Get course title from ForeignKey or CharField or fallback
+    course_title = "no_course"
+    if instance.enrollment.exam.course:
+        course_title = instance.enrollment.exam.course.title
+    elif instance.enrollment.exam.course_name:
+        course_title = instance.enrollment.exam.course_name
+    
+    course_dir = sanitize(course_title)
+    exam_dir = sanitize(instance.enrollment.exam.title)
+    
+    # --- Organized Cross-Platform Persistence ---
     timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
     
-    # Sanitize inputs for file pathing
-    safe_username = username.lower()
-    
-    return os.path.join('violations', safe_username, exam_title, f"screenshot_{timestamp}.{ext}")
+    # Using forward slashes explicitly for Django storage and Windows cross-compatibility
+    return f"violations/{student_dir}/{exam_dir}/{timestamp}.{ext}"
+
+
 
 class ProctoringViolation(models.Model):
     """Model to track proctoring violations."""
     VIOLATION_TYPE_CHOICES = (
         ('phone_detected', 'Phone/Mobile Device Detected'),
+        ('mobile_phone', 'Mobile Phone Identified'),
         ('gadget_detected', 'Electric Gadget Detected'),
         ('tab_switch', 'Tab/Window Switched'),
+        ('tab_switching', 'Tab Switching Activity'),
         ('fullscreen_exit', 'Exited Fullscreen'),
         ('camera_off', 'Camera Turned Off'),
         ('mic_off', 'Microphone Turned Off'),
         ('suspicious_activity', 'Suspicious Activity Detected'),
         ('unusual_behavior', 'Unusual Behavior'),
+        ('multiple_people', 'Multiple People Detected'),
         ('multiple_face', 'Multiple Faces Detected'),
+        ('absence', 'Candidate Absence'),
         ('no_face', 'Face Not Detected'),
+        ('forbidden_item', 'Forbidden Item Detected'),
+        ('partial_face', 'Partial Face Visibility'),
+        ('gaze_aversion', 'Gaze Aversion (Looking Away)'),
     )
     
     enrollment = models.ForeignKey(ExamEnrollment, on_delete=models.CASCADE, related_name='violations')
@@ -41,9 +70,11 @@ class ProctoringViolation(models.Model):
         choices=[('low', 'Low'), ('medium', 'Medium'), ('high', 'High')],
         default='medium'
     )
+
     
     evidence_screenshot = models.ImageField(upload_to=violation_screenshot_path, blank=True, null=True)
     evidence_video_frame = models.FileField(upload_to='violations/frames/', blank=True, null=True)
+    detections = models.JSONField(default=dict, blank=True, help_text="AI Detections at the time of violation")
     
     detected_at = models.DateTimeField(auto_now_add=True)
     reviewed = models.BooleanField(default=False)
@@ -130,7 +161,9 @@ class ActivityLog(models.Model):
         ('copy_paste', 'Copy-Paste Activity'),
         ('keyboard_activity', 'Keyboard Activity'),
         ('mouse_activity', 'Mouse Activity'),
+        ('violation_detected', 'Violation Detected'),
     )
+
     
     session = models.ForeignKey(ExamSession, on_delete=models.CASCADE, related_name='activities')
     activity_type = models.CharField(max_length=50, choices=ACTIVITY_TYPE_CHOICES)

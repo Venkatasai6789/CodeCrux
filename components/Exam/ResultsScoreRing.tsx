@@ -22,13 +22,25 @@ export const ResultsScoreRing: React.FC<ResultsScoreRingProps> = ({
   const colorEnd = isPassed ? '#7C3AED' : '#F87171';
 
   return (
-    <div className="relative flex flex-col items-center justify-center">
-      <svg width={size} height={size} className="-rotate-90">
+    <div className="relative flex flex-col items-center justify-center p-4">
+      <div className="absolute inset-0 rounded-full bg-slate-50/50 scale-95" />
+      <svg width={size} height={size} className="-rotate-90 relative z-10">
         <defs>
-          <linearGradient id={`scoreGradient-${status}`} x1="0%" y1="0%" x2="100%" y2="0%">
+          <linearGradient id={`scoreGradient-${status}`} x1="0%" y1="0%" x2="100%" y2="100%">
             <stop offset="0%" stopColor={colorStart} />
             <stop offset="100%" stopColor={colorEnd} />
           </linearGradient>
+          <filter id="shadow" x="-20%" y="-20%" width="140%" height="140%">
+            <feGaussianBlur in="SourceAlpha" stdDeviation="3" />
+            <feOffset dx="0" dy="4" result="offsetblur" />
+            <feComponentTransfer>
+              <feFuncA type="linear" slope="0.2" />
+            </feComponentTransfer>
+            <feMerge>
+              <feMergeNode />
+              <feMergeNode in="SourceGraphic" />
+            </feMerge>
+          </filter>
         </defs>
         {/* Background Circle */}
         <circle
@@ -50,24 +62,31 @@ export const ResultsScoreRing: React.FC<ResultsScoreRingProps> = ({
           strokeDasharray={circumference}
           strokeDashoffset={strokeDashoffset}
           strokeLinecap="round"
-          className="transition-all duration-1000 ease-out"
+          filter="url(#shadow)"
+          className="transition-all duration-1500 ease-in-out"
         />
       </svg>
       
-      <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-[52px] font-bold text-slate-800 leading-none">
-          {score}%
-        </span>
-        <span className={`text-[16px] font-semibold mt-2 ${isPassed ? 'text-primary' : 'text-error'}`}>
-          Score: {score}/100
+      <div className="absolute inset-0 flex flex-col items-center justify-center z-20">
+        <div className="flex items-baseline">
+            <span className="text-[56px] font-black text-slate-900 leading-none tracking-tighter">
+                {score}
+            </span>
+            <span className="text-xl font-bold text-slate-400 ml-1">%</span>
+        </div>
+        <div className="w-16 h-1 bg-slate-100 rounded-full my-3" />
+        <span className={`text-[12px] font-black uppercase tracking-[0.2em] mb-4 ${isPassed ? 'text-indigo-600' : 'text-red-600'}`}>
+           {isPassed ? 'Academic Merit' : 'Review Required'}
         </span>
         <div className={`
-          mt-3 px-3 py-1 rounded-full text-[14px] font-bold flex items-center gap-1
-          ${isPassed ? 'bg-green-100 text-success' : 'bg-red-100 text-error'}
+          px-4 py-1.5 rounded-2xl text-[11px] font-black uppercase tracking-[0.15em] border flex items-center gap-2
+          ${isPassed ? 'bg-emerald-50 text-emerald-700 border-emerald-100 shadow-sm shadow-emerald-500/10' : 'bg-red-50 text-red-700 border-red-100 shadow-sm shadow-red-500/10'}
         `}>
-          {isPassed ? 'PASSED ✓' : 'FAILED ✗'}
+          <div className={`w-1.5 h-1.5 rounded-full animate-pulse ${isPassed ? 'bg-emerald-500' : 'bg-red-500'}`} />
+          {isPassed ? 'Passed' : 'Failed'}
         </div>
       </div>
     </div>
+
   );
 };

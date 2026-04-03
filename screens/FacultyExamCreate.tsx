@@ -212,57 +212,45 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
     if (currentStep > 1) setCurrentStep(c => c - 1);
   };
 
-  // Simulated AI Generation Logic
-  const handleGenerateContent = () => {
+  // Real AI Generation Logic
+  const handleGenerateContent = async () => {
     if (!aiConfig.youtubeUrl) return;
     
     setIsProcessingAI(true);
-    setGenerationStage('Analyzing video transcript...');
+    setErrorMsg('');
+    setGenerationStage('Connecting to Gemini AI...');
     
-    // Sequence of fake loading states
-    setTimeout(() => setGenerationStage('Extracting key concepts...'), 1500);
-    setTimeout(() => setGenerationStage('Generating coding challenges...'), 3000);
-    setTimeout(() => setGenerationStage('Creating test cases...'), 4500);
-    
-    setTimeout(() => {
-        // Mock Generated Content
-        const generatedQuestions: ExamQuestion[] = [
-            {
-                id: 'gen_1',
-                type: 'mcq',
-                text: 'Based on the video, what is the primary advantage of using a Virtual DOM in React?',
-                points: 5,
-                options: [
-                    { id: 'g1_a', text: 'It directly modifies the browser DOM for faster updates.', isCorrect: false },
-                    { id: 'g1_b', text: 'It minimizes direct DOM manipulation by batching updates.', isCorrect: true },
-                    { id: 'g1_c', text: 'It replaces the need for JavaScript in the browser.', isCorrect: false }
-                ]
-            },
-            {
-                id: 'gen_2',
-                type: 'coding',
-                text: 'Implement the debounce function discussed in the video.',
-                points: 15,
-                language: 'javascript',
-                starterCode: 'function debounce(func, wait) {\n  // Your implementation here\n}',
-                constraints: 'Time Limit: 500ms',
-                testCases: [
-                    { id: 'tc1', input: 'call twice in 100ms', output: '1 call', isHidden: false },
-                    { id: 'tc2', input: 'call once', output: '1 call', isHidden: true }
-                ]
-            },
-            {
-                id: 'gen_3',
-                type: 'short_answer',
-                text: 'Explain the "stale closure" problem mentioned at 12:45.',
-                points: 10,
-            }
-        ];
+    try {
+        // Preparation stages for better UX
+        setTimeout(() => setGenerationStage('Extracting video transcript...'), 1000);
         
-        setQuestions(generatedQuestions);
+        const response = await examsAPI.generateAIContent({
+            youtube_url: aiConfig.youtubeUrl,
+            difficulty: aiConfig.difficulty,
+            count: aiConfig.questionCount,
+            include_coding: aiConfig.includeCoding
+        });
+
+        if (response.success && response.questions) {
+            setGenerationStage('Structuring questions and code challenges...');
+            
+            // Format questions to ensure IDs are unique and types are correct
+            const processedQuestions: ExamQuestion[] = response.questions.map((q: any) => ({
+                ...q,
+                id: q.id || `gen_${Math.random().toString(36).substr(2, 9)}`
+            }));
+            
+            setQuestions(processedQuestions);
+            setIsProcessingAI(false);
+            handleNext(); // Move to editor step automatically
+        } else {
+            throw new Error('No questions were generated. Please try a different video or check your API key.');
+        }
+    } catch (err: any) {
+        console.error('AI Generation Error:', err);
+        setErrorMsg(err.message || 'Failed to generate content. Ensure yt-dlp is installed on the server.');
         setIsProcessingAI(false);
-        handleNext(); // Move to editor
-    }, 6000);
+    }
   };
 
   // --- Render Steps ---

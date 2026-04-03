@@ -160,7 +160,10 @@ class ExamEnrollment(models.Model):
     total_violations = models.IntegerField(default=0)
     final_violations = models.IntegerField(default=0)
     score_reduction = models.FloatField(default=0)
+    is_blocked = models.BooleanField(default=False)
+    is_auto_submitted = models.BooleanField(default=False)
     time_taken_seconds = models.IntegerField(default=0, help_text="Total time taken by student in seconds")
+    integrity_score = models.FloatField(default=100.0, help_text="Calculated integrity score based on violations")
 
     class Meta:
         db_table = 'exam_enrollments'

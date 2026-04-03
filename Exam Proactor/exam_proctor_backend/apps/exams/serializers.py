@@ -118,6 +118,7 @@ class ExamEnrollmentSerializer(serializers.ModelSerializer):
             'id', 'exam', 'exam_title', 'student', 'student_name',
             'status', 'enrolled_at', 'started_at', 'submitted_at',
             'score', 'percentage', 'result', 'total_violations',
-            'final_violations', 'score_reduction', 'time_taken_seconds'
+            'final_violations', 'score_reduction', 'time_taken_seconds',
+            'is_blocked', 'is_auto_submitted'
         ]
         read_only_fields = ['id', 'enrolled_at', 'score', 'percentage', 'result']

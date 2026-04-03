@@ -255,6 +255,10 @@ export const examsAPI = {
     return apiRequest(`/exams/exams/${id}/`);
   },
 
+  async checkStatus(examId: string | number): Promise<any> {
+    return apiRequest(`/exams/exams/${examId}/check_status/`);
+  },
+
   async createExam(examData: any): Promise<any> {
     return apiRequest('/exams/exams/', {
       method: 'POST',
@@ -276,6 +280,18 @@ export const examsAPI = {
     });
   },
 
+  async generateAIContent(data: {
+    youtube_url: string;
+    difficulty: string;
+    count: number;
+    include_coding: boolean;
+  }): Promise<any> {
+    return apiRequest('/exams/exams/generate_ai_content/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
   async enrollInExam(examId: number | string): Promise<any> {
     return apiRequest(`/exams/exams/${examId}/enroll/`, {
       method: 'POST',
@@ -290,12 +306,13 @@ export const examsAPI = {
     });
   },
 
-  async submitExam(examId: number | string, answers: any = {}, timeTakenSeconds: number = 0): Promise<any> {
+  async submitExam(examId: number | string, answers: any = {}, timeTakenSeconds: number = 0, isAutoSubmit: boolean = false): Promise<any> {
     return apiRequest(`/exams/exams/${examId}/submit/`, {
       method: 'POST',
       body: JSON.stringify({
         answers,
-        time_taken_seconds: timeTakenSeconds
+        time_taken_seconds: timeTakenSeconds,
+        is_auto_submit: isAutoSubmit
       }),
     });
   },
@@ -322,6 +339,22 @@ export const examsAPI = {
   /** Get detailed results for a specific exam — faculty/admin only. */
   async getExamResultsDetail(examId: string | number): Promise<any> {
     return apiRequest(`/exams/exams/${examId}/results_detail/`);
+  },
+
+  /** Block a student from an exam — faculty/admin only. */
+  async blockStudent(examId: string | number, studentId: string | number): Promise<any> {
+    return apiRequest(`/exams/exams/${examId}/block_enrollment/`, {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId }),
+    });
+  },
+
+  /** Unblock a student from an exam — faculty/admin only. */
+  async unblockStudent(examId: string | number, studentId: string | number): Promise<any> {
+    return apiRequest(`/exams/exams/${examId}/unblock_enrollment/`, {
+      method: 'POST',
+      body: JSON.stringify({ student_id: studentId }),
+    });
   },
 };
 
@@ -404,12 +437,14 @@ export const proctoringAPI = {
     description?: string;
     severity?: string;
     snapshot?: string;
+    detections?: any;
   }): Promise<any> {
     const formData = new FormData();
     formData.append('enrollment_id', data.enrollment_id.toString());
     formData.append('violation_type', data.violation_type);
     if (data.description) formData.append('description', data.description);
     if (data.severity) formData.append('severity', data.severity);
+    if (data.detections) formData.append('detections', JSON.stringify(data.detections));
     
     if (data.snapshot && data.snapshot.startsWith('data:')) {
       const res = await fetch(data.snapshot);
