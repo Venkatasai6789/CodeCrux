@@ -3,13 +3,15 @@ from rest_framework.decorators import action
 from rest_framework.response import Response
 from rest_framework.permissions import IsAuthenticated
 from django.utils import timezone
-from django.db.models import Avg, Count, Q
+from django.db.models import Avg, Count, Max, Min, Q
 from .models import Exam, ExamEnrollment, Course, CourseEnrollment
 from .serializers import (
     ExamSerializer, ExamListSerializer, ExamEnrollmentSerializer,
     CourseSerializer, CourseEnrollmentSerializer
 )
-from exam_proctor_backend.apps.submissions.models import QuestionSubmission, CodingSubmission
+from exam_proctor_backend.apps.proctoring.models import ExamSession, ProctoringViolation
+from exam_proctor_backend.apps.proctoring.serializers import ExamSessionSerializer, ProctoringViolationSerializer
+from exam_proctor_backend.apps.submissions.models import QuestionSubmission, MCQSubmission, CodingSubmission
 from exam_proctor_backend.apps.questions.models import Question, MCQQuestion, MCQOption, CodingQuestion, TestCase
 from django.db import transaction
 from datetime import timedelta
@@ -499,6 +501,77 @@ class ExamViewSet(viewsets.ModelViewSet):
 
         except Exception as e:
             return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=True, methods=['get'], permission_classes=[IsAuthenticated])
+    def results_detail(self, request, pk=None):
+        """Get detailed results for an exam including all students, scores, and violations."""
+        exam = self.get_object()
+        
+        # Security check: Only instructor or admin
+        if request.user.role not in ['instructor', 'admin']:
+            return Response({'error': 'Unauthorized'}, status=status.HTTP_403_FORBIDDEN)
+            
+        enrollments = ExamEnrollment.objects.filter(exam=exam).select_related('student')
+        
+        results = []
+        for enrollment in enrollments:
+            # Get session info if exists
+            session = getattr(enrollment, 'session', None)
+            
+            # Basic student data
+            student_data = {
+                'id': enrollment.id,
+                'student_id': enrollment.student.id,
+                'name': enrollment.student.get_full_name() or enrollment.student.username,
+                'email': enrollment.student.email,
+                'score': enrollment.score,
+                'percentage': enrollment.percentage,
+                'result': enrollment.result,
+                'status': enrollment.status,
+                'time_taken': enrollment.time_taken_seconds,
+                'violations_count': enrollment.total_violations,
+                'has_session': session is not None
+            }
+            
+            if session:
+                # Add detailed session data for violations and logs
+                session_serializer = ExamSessionSerializer(session)
+                student_data['session'] = session_serializer.data
+            
+            results.append(student_data)
+            
+        # Calculate summary stats
+        stats = enrollments.aggregate(
+            avg_score=Avg('percentage'),
+            max_score=Max('percentage'),
+            min_score=Min('percentage'),
+            pass_count=Count('pk', filter=Q(result='pass')),
+            total_count=Count('pk')
+        )
+        
+        # Proctoring summary
+        total_violations = ProctoringViolation.objects.filter(enrollment__exam=exam).count()
+        flagged_count = enrollments.filter(total_violations__gt=exam.violation_threshold).count()
+        
+        return Response({
+            'exam': {
+                'id': exam.id,
+                'title': exam.title,
+                'total_marks': exam.total_marks,
+                'passing_marks': exam.passing_marks,
+                'violation_threshold': exam.violation_threshold
+            },
+            'summary': {
+                'total_students': stats['total_count'],
+                'pass_count': stats['pass_count'],
+                'avg_score': round(stats['avg_score'] or 0, 1),
+                'max_score': stats['max_score'],
+                'min_score': stats['min_score'],
+                'total_violations': total_violations,
+                'flagged_students': flagged_count
+            },
+            'students': results
+        })
 
 
 class ExamEnrollmentViewSet(viewsets.ModelViewSet):

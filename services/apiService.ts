@@ -318,6 +318,11 @@ export const examsAPI = {
   async getFacultyAnalytics(): Promise<any> {
     return apiRequest('/exams/analytics/faculty/');
   },
+
+  /** Get detailed results for a specific exam — faculty/admin only. */
+  async getExamResultsDetail(examId: string | number): Promise<any> {
+    return apiRequest(`/exams/exams/${examId}/results_detail/`);
+  },
 };
 
 // ─── QUESTIONS API ──────────────────────────────────────────────────

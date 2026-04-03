@@ -107,7 +107,7 @@ const AppRoutes: React.FC = () => {
         <FacultyReportsScreen onNavigate={navigate} />
       ) : currentPath === '/live-monitoring' ? (
         <LiveMonitoringScreen onNavigate={navigate} />
-      ) : currentPath === '/exam-analytics' ? (
+      ) : currentPath.startsWith('/exam-analytics') ? (
         <ExamAnalyticsScreen onNavigate={navigate} />
       ) : currentPath === '/students' ? (
         <StudentManagementScreen onNavigate={navigate} />

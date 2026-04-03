@@ -23,6 +23,7 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   // UI State
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
   const [execResults, setExecResults] = useState<Record<string, any[]>>({});
   const [isExecuting, setIsExecuting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(3600); 
@@ -264,10 +265,12 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   };
 
   const handleFinishExam = async () => {
+      if (isSubmitting) return;
+      setIsSubmitting(true);
       const now = Date.now();
       try {
           if (sessionId && !isNaN(parseInt(sessionId.toString()))) {
-              await proctoringAPI.endSession(parseInt(sessionId.toString()));
+              try { await proctoringAPI.endSession(parseInt(sessionId.toString())); } catch (e) { console.error("Session end failed:", e); }
           }
 
           const examDuration = (examDetails?.duration_minutes || 60) * 60;
@@ -334,14 +337,17 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
 
               localStorage.setItem('last_exam_result', JSON.stringify(serverResult));
               (window as any).lastExamResult = serverResult;
-          } catch (err) {
+          } catch (err: any) {
               console.error('API Submission failed, displaying local data:', err);
+              // Fallback to local data if submission was already completed or failed
               localStorage.setItem('last_exam_result', JSON.stringify(finalResult));
               (window as any).lastExamResult = finalResult;
           }
           
+          setIsSubmitting(false);
           onNavigate('/exam-results');
       } catch (err) { 
+          setIsSubmitting(false);
           console.error('Critical failure in handleFinishExam:', err);
           onNavigate('/exam-results'); 
       }

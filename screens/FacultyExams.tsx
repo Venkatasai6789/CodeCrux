@@ -225,7 +225,7 @@ export const FacultyExamsScreen: React.FC<FacultyExamsProps> = ({ onNavigate }) 
 
                             {(exam.status === 'Scheduled' || exam.status === 'Completed') && (
                                 <button 
-                                    onClick={() => exam.status === 'Completed' ? onNavigate('/exam-analytics') : onNavigate(`/exam-details?id=${exam.id}`)}
+                                    onClick={() => exam.status === 'Completed' ? onNavigate(`/exam-analytics?id=${exam.id}`) : onNavigate(`/exam-details?id=${exam.id}`)}
                                     className={`flex-1 xl:w-full flex items-center justify-center gap-4 px-10 py-5 rounded-[1.5rem] font-black text-xs uppercase tracking-widest transition-all hover:-translate-y-1 ${
                                         exam.status === 'Completed' 
                                             ? 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100' 
