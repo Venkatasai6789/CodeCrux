@@ -75,6 +75,7 @@ class ExamListSerializer(serializers.ModelSerializer):
     question_count = serializers.SerializerMethodField()
     enrolled_count = serializers.SerializerMethodField()
     enrollment_id = serializers.SerializerMethodField()
+    enrollment_status = serializers.SerializerMethodField()
 
     class Meta:
         model = Exam
@@ -82,7 +83,7 @@ class ExamListSerializer(serializers.ModelSerializer):
             'id', 'title', 'description', 'course_name', 'instructor_name',
             'start_time', 'end_time', 'duration_minutes', 'status',
             'total_marks', 'passing_marks', 'created_at', 'question_count',
-            'enrolled_count', 'enrollment_id'
+            'enrolled_count', 'enrollment_id', 'enrollment_status'
         ]
         read_only_fields = ['id', 'created_at']
 
@@ -99,6 +100,13 @@ class ExamListSerializer(serializers.ModelSerializer):
             return enrollment.id if enrollment else None
         return None
 
+    def get_enrollment_status(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            enrollment = obj.enrollments.filter(student=request.user).first()
+            return enrollment.status if enrollment else None
+        return None
+
 
 class ExamEnrollmentSerializer(serializers.ModelSerializer):
     exam_title = serializers.CharField(source='exam.title', read_only=True)
@@ -110,6 +118,6 @@ class ExamEnrollmentSerializer(serializers.ModelSerializer):
             'id', 'exam', 'exam_title', 'student', 'student_name',
             'status', 'enrolled_at', 'started_at', 'submitted_at',
             'score', 'percentage', 'result', 'total_violations',
-            'final_violations', 'score_reduction'
+            'final_violations', 'score_reduction', 'time_taken_seconds'
         ]
         read_only_fields = ['id', 'enrolled_at', 'score', 'percentage', 'result']

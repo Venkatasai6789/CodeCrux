@@ -14,8 +14,8 @@ class QuestionViewSet(viewsets.ReadOnlyModelViewSet):
     permission_classes = [IsAuthenticated]
 
     def get_serializer_class(self):
-        if self.action == 'list':
-            return QuestionListSerializer
+        # Always use full serializer to include mcq_details/coding_details
+        # QuestionListSerializer omits nested options which breaks the exam UI
         return QuestionSerializer
 
     def get_queryset(self):

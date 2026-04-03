@@ -4,9 +4,11 @@ import { Button } from '../ui/Button';
 
 interface CameraPreviewProps {
   onPermissionGranted?: () => void;
+  onVideoReady?: (videoEl: HTMLVideoElement) => void;
   permissionGranted: boolean;
   faceDetected: boolean;
   autoStart?: boolean;
+  minimalUI?: boolean;
 }
 
 export interface CameraHandle {
@@ -16,9 +18,11 @@ export interface CameraHandle {
 
 export const CameraPreview = forwardRef<CameraHandle, CameraPreviewProps>(({ 
   onPermissionGranted = () => {}, 
+  onVideoReady,
   permissionGranted,
   faceDetected,
-  autoStart = false
+  autoStart = false,
+  minimalUI = false
 }, ref) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [stream, setStream] = useState<MediaStream | null>(null);
@@ -74,12 +78,25 @@ export const CameraPreview = forwardRef<CameraHandle, CameraPreviewProps>(({
     }
   }, [autoStart, permissionGranted]);
 
-  // Stable attachment effect
+  // Stable attachment effect — also notify parent when video is playing
   useEffect(() => {
     if (videoRef.current && stream) {
       videoRef.current.srcObject = stream;
+      const el = videoRef.current;
+      const handlePlaying = () => {
+        if (onVideoReady) onVideoReady(el);
+      };
+      // Fire when video starts playing (readyState 4)
+      if (el.readyState >= 3) {
+        handlePlaying();
+      } else {
+        el.addEventListener('playing', handlePlaying, { once: true });
+      }
+      return () => {
+        el.removeEventListener('playing', handlePlaying);
+      };
     }
-  }, [stream, permissionGranted]);
+  }, [stream, permissionGranted, onVideoReady]);
 
   useEffect(() => {
     return () => {
@@ -90,6 +107,14 @@ export const CameraPreview = forwardRef<CameraHandle, CameraPreviewProps>(({
   }, [stream]);
 
   if (!permissionGranted && !isSimulated) {
+    if (minimalUI) {
+      return (
+        <div className="w-full h-full bg-slate-900 rounded-xl flex items-center justify-center border border-slate-700">
+           <RefreshCw className="w-6 h-6 text-indigo-500 animate-spin" />
+        </div>
+      );
+    }
+
     return (
       <div className="w-full max-w-[480px] aspect-[4/3] bg-slate-900 rounded-xl flex flex-col items-center justify-center p-8 text-center border-2 border-slate-200 relative overflow-hidden">
         <div className="relative z-10 flex flex-col items-center">

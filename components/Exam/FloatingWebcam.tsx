@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from 'react';
+import React, { useRef, useState, useEffect, useCallback } from 'react';
 import { CameraPreview, CameraHandle } from '../Proctoring/CameraPreview';
 import { useObjectDetection } from '../../hooks/useObjectDetection';
 import { AlertCircle, ShieldCheck, ShieldAlert, Cpu } from 'lucide-react';
@@ -6,18 +6,43 @@ import { AlertCircle, ShieldCheck, ShieldAlert, Cpu } from 'lucide-react';
 interface FloatingWebcamProps {
   className?: string;
   onDetection: (detections: any[]) => void;
+  onSnapshot?: () => string | null;
 }
 
 export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', onDetection }) => {
   const cameraHandleRef = useRef<CameraHandle>(null);
+  // Stable ref for the actual video element — persists across renders
+  const stableVideoRef = useRef<HTMLVideoElement | null>(null);
   const [hasPermission, setHasPermission] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
+  const [videoReady, setVideoReady] = useState(false);
   
-  // Use the exposed videoElement from the camera handle
+  // Callback fired by CameraPreview when video is actually playing
+  const handleVideoReady = useCallback((videoEl: HTMLVideoElement) => {
+    stableVideoRef.current = videoEl;
+    setVideoReady(true);
+    console.log('[FloatingWebcam] Video element ready for detection, readyState:', videoEl.readyState);
+  }, []);
+
+  // Pass the STABLE ref to the detection hook — not a new object each render
   const { detections, loading: modelLoading } = useObjectDetection(
-    { current: cameraHandleRef.current?.videoElement || null }, 
-    hasPermission
+    stableVideoRef, 
+    hasPermission && videoReady
   );
+
+  // Expose a snapshot function for violation evidence capture
+  const takeSnapshot = useCallback((): string | null => {
+    if (cameraHandleRef.current) {
+      return cameraHandleRef.current.takeScreenshot();
+    }
+    return null;
+  }, []);
+
+  // Make snapshot function available to parent via a custom event
+  useEffect(() => {
+    (window as any).__proctoringTakeSnapshot = takeSnapshot;
+    return () => { delete (window as any).__proctoringTakeSnapshot; };
+  }, [takeSnapshot]);
 
   useEffect(() => {
     if (!modelLoading && detections.length > 0) {
@@ -45,8 +70,10 @@ export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', 
                 ref={cameraHandleRef}
                 permissionGranted={hasPermission}
                 onPermissionGranted={() => setHasPermission(true)}
+                onVideoReady={handleVideoReady}
                 faceDetected={faceDetected}
                 autoStart={true}
+                minimalUI={true}
             />
             
             {/* AI Status Scanning Line */}
@@ -86,12 +113,12 @@ export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', 
 
       {/* Persistent Violation Banners */}
       <div className="mt-3 space-y-2 pointer-events-none">
-          {detections.some(d => d.class === 'cell phone' && d.score > 0.6) && (
+          {detections.some(d => d.class === 'cell phone' && d.score > 0.45) && (
               <div className="bg-red-600 text-white p-3 rounded-2xl shadow-xl animate-shake flex items-center gap-3 border-2 border-white/20">
                   <div className="bg-white/20 p-2 rounded-xl"><AlertCircle className="w-5 h-5" /></div>
                   <div>
                       <p className="font-black text-xs uppercase">Mobile Phone Detected</p>
-                      <p className="text-[10px] opacity-80 font-bold">Possible Violation Recorded</p>
+                      <p className="text-[10px] opacity-80 font-bold">Violation Recorded & Snapshot Captured</p>
                   </div>
               </div>
           )}
@@ -124,7 +151,8 @@ export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', 
         .animate-shake {
           animation: shake 0.2s ease-in-out infinite;
         }
-      `}</style>
+      `}
+      </style>
     </div>
   );
 };

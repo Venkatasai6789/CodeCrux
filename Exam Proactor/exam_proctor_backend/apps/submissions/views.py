@@ -63,6 +63,21 @@ class CodingSubmissionViewSet(viewsets.ModelViewSet):
         return CodingSubmission.objects.filter(submission__enrollment__student=self.request.user)
 
     @action(detail=False, methods=['post'])
+    def execute_code(self, request):
+        """Execute coding solution against test cases."""
+        from .executor import run_code
+        
+        language = request.data.get('language')
+        code = request.data.get('code')
+        test_cases = request.data.get('test_cases', [])
+        
+        try:
+            results = run_code(language, code, test_cases)
+            return Response({'results': results}, status=status.HTTP_200_OK)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_400_BAD_REQUEST)
+
+    @action(detail=False, methods=['post'])
     def submit_code(self, request):
         """Submit coding solution."""
         enrollment_id = request.data.get('enrollment_id')

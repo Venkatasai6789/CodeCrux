@@ -37,19 +37,22 @@ export const ExamsScreen: React.FC<ExamsScreenProps> = ({ onNavigate }) => {
         const startTime = new Date(item.start_time);
         const endTime = new Date(item.end_time);
         
-        let displayStatus: 'Scheduled' | 'Completed' | 'In Progress' = 'Scheduled';
+        let displayStatus: 'Scheduled' | 'Completed' | 'Live' = 'Scheduled';
         
-        // If the backend has enrollment data we can be more precise
-        // But for the list view, we look at the general status
+        // 1. Time-based default status
         if (now > endTime) {
             displayStatus = 'Completed';
         } else if (now >= startTime && now <= endTime) {
-            displayStatus = 'Scheduled'; // or 'Active'
+            displayStatus = 'Live';
         }
         
-        // Override with actual enrollment status if available
-        // Note: The backend 'status' field in ExamListSerializer refers to the EXAM status (published, etc.)
-        // We might need to check if there's an enrollment status field.
+        // 2. Override with actual enrollment status from backend
+        // 'enrolled', 'started', 'submitted', 'completed'
+        if (item.enrollment_status === 'submitted' || item.enrollment_status === 'completed') {
+            displayStatus = 'Completed';
+        } else if (item.enrollment_status === 'started' && now <= endTime) {
+            displayStatus = 'Live';
+        }
         
         return {
           id: item.id.toString(),

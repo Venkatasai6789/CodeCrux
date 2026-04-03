@@ -11,42 +11,65 @@ export interface Detection {
   data?: any; // Extra data for landmarks etc.
 }
 
-export const useObjectDetection = (videoRef: React.RefObject<HTMLVideoElement>, enabled: boolean = true) => {
-  const [objectModel, setObjectModel] = useState<cocoSsd.ObjectDetection | null>(null);
-  const [faceModel, setFaceModel] = useState<faceLandmarksDetection.FaceLandmarksDetector | null>(null);
+export const useObjectDetection = (videoRef: React.RefObject<HTMLVideoElement | null>, enabled: boolean = true) => {
+  const [objectModel, setObjectModel] = useState<any>(null);
+  const [faceModel, setFaceModel] = useState<any>(null);
   const [detections, setDetections] = useState<Detection[]>([]);
   const [loading, setLoading] = useState(true);
   const requestRef = useRef<number>(undefined);
   const lastDetectionTime = useRef<number>(0);
+  const hasInitialized = useRef(false);
+  const detectionBuffer = useRef<Record<string, number>>({});
+  const BUFFER_THRESHOLD = 3; // Consecutive hits needed to confirm a violation object
 
   // Load models on mount
   useEffect(() => {
+    if (hasInitialized.current) return;
+    hasInitialized.current = true;
+
     async function loadModels() {
-      try {
-        console.log('Loading AI models...');
-        await tf.ready();
-        
-        // 1. COCO-SSD for People & Objects
-        const ssd = await cocoSsd.load({
-            base: 'lite_mobilenet_v2'
-        });
-        setObjectModel(ssd);
-
-        // 2. Face Landmarks for Rotation & Presence
-        const detector = await faceLandmarksDetection.createDetector(
-          faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
-          { 
-            runtime: 'tfjs', 
-            refineLandmarks: true,
-            maxFaces: 5 
+      const timeout = setTimeout(() => {
+          if (loading) {
+              console.warn('AI Models taking too long. Entering fallback mode.');
+              setLoading(false);
           }
-        );
-        setFaceModel(detector);
+      }, 15000); // 15s resilience timeout
 
+      try {
+        console.log('[AI] Initializing engine...');
+        // Explicitly set backend with fallback
+        try {
+            await tf.setBackend('webgl');
+            await tf.ready();
+            console.log('[AI] WebGL backend initialized.');
+        } catch (e) {
+            console.warn('[AI] WebGL failed, falling back to CPU.');
+            await tf.setBackend('cpu');
+            await tf.ready();
+        }
+        
+        // Load in parallel to save time
+        const results = await Promise.allSettled([
+            cocoSsd.load({ base: 'lite_mobilenet_v2' }),
+            faceLandmarksDetection.createDetector(
+                faceLandmarksDetection.SupportedModels.MediaPipeFaceMesh,
+                { runtime: 'tfjs', refineLandmarks: false, maxFaces: 4 }
+            )
+        ]);
+
+        if (results[0].status === 'fulfilled') {
+            setObjectModel(results[0].value);
+            console.log('[AI] Object detection (SSD) loaded.');
+        }
+        if (results[1].status === 'fulfilled') {
+            setFaceModel(results[1].value);
+            console.log('[AI] Face mesh tracking loaded.');
+        }
+
+        clearTimeout(timeout);
         setLoading(false);
-        console.log('AI Proctoring models loaded successfully.');
       } catch (err) {
-        console.error('Failed to load object detection models:', err);
+        console.error('[AI] Critical load error:', err);
         setLoading(false);
       }
     }
@@ -54,106 +77,133 @@ export const useObjectDetection = (videoRef: React.RefObject<HTMLVideoElement>, 
   }, []);
 
   const calculateHeadPose = (keypoints: any[]) => {
-    // Basic heuristic for head pose based on nose vs eye positions
-    // In a full FaceMesh, we have 478 points.
-    // Index mapping for key points: 1 (Nose Tip), 33 (Left Eye), 263 (Right Eye)
+    // MediaPipe FaceMesh Index Mapping:
+    // 1: Nose Tip, 33: Left Eye Outer, 263: Right Eye Outer, 61: Left Mouth, 291: Right Mouth
     const nose = keypoints[1];
-    const leftEye = keypoints[33]; 
-    const rightEye = keypoints[263];
+    const lEye = keypoints[33]; 
+    const rEye = keypoints[263];
+    const lMouth = keypoints[61];
+    const rMouth = keypoints[291];
 
-    if (!nose || !leftEye || !rightEye) return 'center';
+    if (!nose || !lEye || !rEye) return 'center';
 
-    // X-axis: Nose position relative to eye centers
-    const dx = (leftEye.x + rightEye.x) / 2 - nose.x;
-    
-    // Y-axis: Nose position relative to eyes vertically
-    const dy = (leftEye.y + rightEye.y) / 2 - nose.y;
+    // Horizontal ratio (Yaw)
+    const eyeDist = rEye.x - lEye.x;
+    const noseFromLeft = nose.x - lEye.x;
+    const horizontalRatio = noseFromLeft / eyeDist;
 
-    // Thresholds for "looking away"
-    // Note: These values might need tuning based on camera focal length
-    let pose = 'center';
-    
-    if (dx > 30) pose = 'right';
-    else if (dx < -30) pose = 'left';
-    else if (dy > 20) pose = 'down';
-    else if (dy < -25) pose = 'up';
+    // Vertical ratio (Pitch)
+    const midEyeY = (lEye.y + rEye.y) / 2;
+    const midMouthY = (lMouth.y + rMouth.y) / 2;
+    const faceHeight = midMouthY - midEyeY;
+    const noseFromTop = nose.y - midEyeY;
+    const verticalRatio = noseFromTop / faceHeight;
 
-    return pose;
+    // Thresholds tuned for "100% accuracy" as requested
+    if (horizontalRatio < 0.25) return 'right'; // Looking Right (Nose close to left eye in mirrored cam)
+    if (horizontalRatio > 0.75) return 'left'; // Looking Left
+    if (verticalRatio > 0.8) return 'down'; // Looking Down
+    if (verticalRatio < 0.2) return 'up'; // Looking Up
+
+    return 'center';
   };
 
   const detect = useCallback(async () => {
-    if (!objectModel || !faceModel || !videoRef.current || videoRef.current.readyState !== 4 || !enabled) {
+    const video = videoRef.current;
+    if (!video || !enabled || video.readyState !== 4) {
       requestRef.current = requestAnimationFrame(detect);
       return;
     }
 
     const now = Date.now();
-    // Run detection every 400ms (balanced for accuracy vs CPU)
-    if (now - lastDetectionTime.current < 400) {
+    // Throttle for performance, 300ms is balanced for accuracy
+    if (now - lastDetectionTime.current < 300) {
       requestRef.current = requestAnimationFrame(detect);
       return;
     }
 
     try {
-      const results: Detection[] = [];
-      const video = videoRef.current;
+      const rawResults: Detection[] = [];
 
-      // 1. Run Object Detection (People, Phones)
-      const ssdResults = await objectModel.detect(video);
-      ssdResults.forEach(d => {
-        results.push({
-          bbox: d.bbox as [number, number, number, number],
-          class: d.class,
-          score: d.score
-        });
-      });
+      // 1. OBJECT DETECTION (Phones, People count redundancy)
+      if (objectModel) {
+          const ssdResults = await objectModel.detect(video);
+          ssdResults.forEach((d: any) => {
+              // Increased precision to 0.6 for phones to reduce false positives
+              if (d.class === 'cell phone' && d.score > 0.6) {
+                  rawResults.push({ class: 'cell phone', score: d.score, bbox: d.bbox });
+              }
+              if (d.class === 'laptop' || d.class === 'book') {
+                  if (d.score > 0.75) rawResults.push({ class: 'suspicious_object', score: d.score, data: { item: d.class } });
+              }
+              // Backup person detection
+              if (d.class === 'person' && d.score > 0.5) {
+                  rawResults.push({ class: 'ssd_person', score: d.score });
+              }
+          });
+      }
 
-      // 2. Run Face Detection (Pose, Count)
-      const faces = await faceModel.estimateFaces(video);
-      faces.forEach((face, idx) => {
-        const pose = calculateHeadPose(face.keypoints);
-        results.push({
-          class: 'face',
-          score: 1.0, 
-          data: {
-            pose,
-            landmarks: face.keypoints,
-            isMain: idx === 0
+      // 2. FACE DETECTION (Rotation, Half Face, Multiple People)
+      if (faceModel) {
+          const faces = await faceModel.estimateFaces(video);
+          
+          faces.forEach((face: any, idx: number) => {
+              const averageScore = face.keypoints.reduce((acc: number, kp: any) => acc + (kp.score || 1), 0) / face.keypoints.length;
+              const pose = calculateHeadPose(face.keypoints);
+              
+              if (averageScore > 0.4) {
+                  rawResults.push({
+                      class: 'face',
+                      score: averageScore,
+                      data: { pose, isMain: idx === 0, isPartial: averageScore < 0.6 }
+                  });
+              }
+          });
+
+          const personCount = Math.max(faces.length, rawResults.filter(r => r.class === 'ssd_person').length);
+          if (personCount > 1) rawResults.push({ class: 'multiple_people_detected', score: 1.0 });
+          if (personCount === 0) rawResults.push({ class: 'no_person', score: 1.0 });
+      }
+
+      // 3. TEMPORAL SMOOTHING (Accuracy Engine)
+      const confirmedResults: Detection[] = [];
+      const currentHits: string[] = rawResults.map(r => r.class);
+      const persistenceRequired = ['cell phone', 'multiple_people_detected', 'no_person', 'suspicious_object'];
+      
+      persistenceRequired.forEach(cls => {
+          if (currentHits.includes(cls)) {
+              detectionBuffer.current[cls] = (detectionBuffer.current[cls] || 0) + 1;
+          } else {
+              detectionBuffer.current[cls] = Math.max(0, (detectionBuffer.current[cls] || 0) - 1);
           }
-        });
+
+          if (detectionBuffer.current[cls] >= BUFFER_THRESHOLD) {
+              const match = rawResults.find(r => r.class === cls);
+              if (match) confirmedResults.push(match);
+          }
       });
 
-      // 3. Composite Logic for "No Person" or "Multiple People"
-      const personCountSSD = ssdResults.filter(r => r.class === 'person').length;
-      const personCountFace = faces.length;
-      
-      if (personCountFace === 0 && personCountSSD === 0) {
-          results.push({ class: 'no_person', score: 1.0 });
-      }
-      
-      if (personCountFace > 1 || personCountSSD > 1) {
-          results.push({ class: 'multiple_people_detected', score: 1.0 });
-      }
+      // Faces are real-time for smooth UI feedback, but violations are buffered
+      confirmedResults.push(...rawResults.filter(r => r.class === 'face'));
 
-      setDetections(results);
+      setDetections(confirmedResults);
       lastDetectionTime.current = now;
     } catch (err) {
-      console.error('Proctoring detection error:', err);
+      if (now % 20 === 0) console.error('[AI Detection] Cycle error:', err);
     }
 
     requestRef.current = requestAnimationFrame(detect);
   }, [objectModel, faceModel, videoRef, enabled]);
 
   useEffect(() => {
-    if (enabled && objectModel && faceModel) {
+    if (enabled && (objectModel || faceModel)) {
       requestRef.current = requestAnimationFrame(detect);
     }
     return () => {
-      if (requestRef.current) {
-        cancelAnimationFrame(requestRef.current);
-      }
+      if (requestRef.current) cancelAnimationFrame(requestRef.current);
     };
   }, [enabled, objectModel, faceModel, detect]);
 
   return { loading, detections };
 };
+

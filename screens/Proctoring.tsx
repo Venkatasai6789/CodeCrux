@@ -3,7 +3,7 @@ import { Shield, CheckCircle, AlertTriangle, Monitor, CreditCard, Mic, ChevronDo
 import { CameraPreview, CameraHandle } from '../components/Proctoring/CameraPreview';
 import { Button } from '../components/ui/Button';
 import { SystemCheckItem } from '../types';
-import { examsAPI } from '../services/apiService';
+import { examsAPI, proctoringAPI } from '../services/apiService';
 
 interface ProctoringScreenProps {
   onNavigate: (path: string) => void;
@@ -120,7 +120,7 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
     setChecks(prev => prev.map(c => c.id === id ? { ...c, status, value } : c));
   };
 
-  const handleCaptureID = () => {
+  const handleCaptureID = async () => {
       if (!cameraRef.current) return;
       
       const screenshot = cameraRef.current.takeScreenshot();
@@ -128,6 +128,14 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
           setCapturedImage(screenshot);
           setIdCaptured(true);
           updateCheck('5', 'pass', 'Captured');
+          
+          if (enrollment?.id) {
+              try {
+                  await proctoringAPI.uploadIDCard(enrollment.id, screenshot);
+              } catch (error) {
+                  console.error("Failed to upload ID card:", error);
+              }
+          }
       }
   };
 

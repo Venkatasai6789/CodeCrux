@@ -54,7 +54,13 @@ async function apiRequest(
 
   const url = endpoint.startsWith('http') ? endpoint : `${API_BASE}${endpoint}`;
 
-  const response = await fetch(url, { ...options, headers });
+  const isFormData = options.body instanceof FormData;
+  const finalHeaders: Record<string, string> = { ...headers };
+  if (isFormData) {
+    delete finalHeaders['Content-Type'];
+  }
+
+  const response = await fetch(url, { ...options, headers: finalHeaders });
 
   // If 401, try to refresh token
   if (response.status === 401 && requireAuth) {
@@ -284,10 +290,13 @@ export const examsAPI = {
     });
   },
 
-  async submitExam(examId: number | string): Promise<any> {
+  async submitExam(examId: number | string, answers: any = {}, timeTakenSeconds: number = 0): Promise<any> {
     return apiRequest(`/exams/exams/${examId}/submit/`, {
       method: 'POST',
-      body: JSON.stringify({}),
+      body: JSON.stringify({
+        answers,
+        time_taken_seconds: timeTakenSeconds
+      }),
     });
   },
 
@@ -352,6 +361,17 @@ export const submissionsAPI = {
       }),
     });
   },
+
+  async executeCode(language: string, code: string, testCases: any[]): Promise<any> {
+    return apiRequest('/submissions/coding/execute_code/', {
+      method: 'POST',
+      body: JSON.stringify({
+        language,
+        code,
+        test_cases: testCases,
+      }),
+    });
+  },
 };
 
 // ─── PROCTORING API ─────────────────────────────────────────────────
@@ -378,10 +398,23 @@ export const proctoringAPI = {
     violation_type: string;
     description?: string;
     severity?: string;
+    snapshot?: string;
   }): Promise<any> {
+    const formData = new FormData();
+    formData.append('enrollment_id', data.enrollment_id.toString());
+    formData.append('violation_type', data.violation_type);
+    if (data.description) formData.append('description', data.description);
+    if (data.severity) formData.append('severity', data.severity);
+    
+    if (data.snapshot && data.snapshot.startsWith('data:')) {
+      const res = await fetch(data.snapshot);
+      const blob = await res.blob();
+      formData.append('evidence_screenshot', blob, 'violation.jpg');
+    }
+
     return apiRequest('/proctoring/violations/report_violation/', {
       method: 'POST',
-      body: JSON.stringify(data),
+      body: formData,
     });
   },
 
@@ -392,6 +425,16 @@ export const proctoringAPI = {
         session_id: sessionId,
         activity_type: activityType,
         description: description || '',
+      }),
+    });
+  },
+
+  async uploadIDCard(enrollmentId: number, base64Image: string): Promise<any> {
+    return apiRequest('/proctoring/sessions/upload_id_card/', {
+      method: 'POST',
+      body: JSON.stringify({
+        enrollment_id: enrollmentId,
+        image: base64Image,
       }),
     });
   },

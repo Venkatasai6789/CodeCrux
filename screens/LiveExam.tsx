@@ -1,11 +1,11 @@
 import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { 
-  Clock, ChevronLeft, ChevronRight, Grip, Info, AlertTriangle, Loader2
+  Clock, ChevronLeft, ChevronRight, Grip, Info, AlertTriangle, Loader2, Play, Terminal, CheckCircle, XCircle
 } from 'lucide-react';
 import { CodeEditor } from '../components/Lab/CodeEditor';
 import { FloatingWebcam } from '../components/Exam/FloatingWebcam';
 import { ExamQuestion } from '../types';
-import { examsAPI, questionsAPI, proctoringAPI } from '../services/apiService';
+import { examsAPI, questionsAPI, proctoringAPI, submissionsAPI } from '../services/apiService';
 
 interface LiveExamScreenProps {
   onNavigate: (path: string) => void;
@@ -23,12 +23,16 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   // UI State
   const [currentIdx, setCurrentIdx] = useState(0);
   const [answers, setAnswers] = useState<Record<string, string>>({});
+  const [execResults, setExecResults] = useState<Record<string, any[]>>({});
+  const [isExecuting, setIsExecuting] = useState(false);
   const [timeLeft, setTimeLeft] = useState(3600); 
   const [isPaletteOpen, setIsPaletteOpen] = useState(false);
   const [violationCount, setViolationCount] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
+  const [isExamBlocked, setIsExamBlocked] = useState(false);
   const [incidentLog, setIncidentLog] = useState<any[]>([]);
   const lastViolationTime = useRef<Record<string, number>>({});
+  const maxViolations = 5;
 
   // 1. Initial Load: Parse Params
   useEffect(() => {
@@ -65,10 +69,8 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
         // Start Session
         const numericEnrollId = parseInt(enrollmentId, 10);
         if (!isNaN(numericEnrollId)) {
-            const session = await proctoringAPI.startSession(numericEnrollId);
-            setSessionId(session.id);
-        } else {
-            setSessionId(Date.now()); 
+            const session = await proctoringAPI.startSession(numericEnrollId).catch(() => null);
+            if (session) setSessionId(session.id);
         }
       } catch (err) {
         console.error('Failed to initialize exam:', err);
@@ -82,25 +84,51 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
   // 3. Proctoring Helper
   const reportViolation = useCallback(async (type: string, details: string, severity: 'low'|'medium'|'high' = 'medium') => {
     const now = Date.now();
-    if (lastViolationTime.current[type] && now - lastViolationTime.current[type] < 10000) return;
+    // Throttle same-type violations to every 15s, but always catch critical ones
+    if (lastViolationTime.current[type] && now - lastViolationTime.current[type] < 15000) return;
     lastViolationTime.current[type] = now;
     
+    // CAPTURE EVIDENCE
+    let snapshot = null;
+    if (typeof (window as any).__proctoringTakeSnapshot === 'function') {
+        snapshot = (window as any).__proctoringTakeSnapshot();
+    }
+
     const newIncident = {
         id: `inc-${now}`,
         type,
         details,
         severity,
         timestamp: now,
+        snapshot,
         timeLabel: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })
     };
+    
     setIncidentLog(prev => [...prev, newIncident]);
-    setViolationCount(prev => prev + 1);
+    setViolationCount(prev => {
+        const newCount = prev + 1;
+        if (newCount >= maxViolations) {
+            setIsExamBlocked(true);
+        } else if (severity === 'high') {
+            setIsLocked(true);
+        }
+        return newCount;
+    });
 
     const numId = parseInt(enrollmentId || '0', 10);
     if (!isNaN(numId) && numId > 0) {
-        try { await proctoringAPI.reportViolation({ enrollment_id: numId, violation_type: type, description: details, severity }); } catch (e) {}
+        try { 
+            await proctoringAPI.reportViolation({ 
+                enrollment_id: numId, 
+                violation_type: type, 
+                description: details, 
+                severity,
+                snapshot: snapshot || undefined
+            }); 
+        } catch (e) {
+            console.error('[LiveExam] Failed to report violation to backend:', e);
+        }
     }
-    if (severity === 'high') setIsLocked(true);
   }, [enrollmentId]);
 
   // 4. Tab Monitoring
@@ -120,17 +148,84 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
 
   // 5. AI Detection Handler
   const handleAIThreshold = useCallback((detections: any[]) => {
-      if (detections.some(d => d.class === 'multiple_people_detected')) reportViolation('multiple_people', 'Multiple people detected.', 'high');
-      if (detections.some(d => d.class === 'no_person')) reportViolation('absence', 'No person detected.', 'medium');
-      if (detections.some(d => d.class === 'cell phone' && d.score > 0.6)) reportViolation('mobile_phone', 'Mobile phone identified.', 'high');
+      // Multiple People
+      if (detections.some(d => d.class === 'multiple_people_detected')) {
+          reportViolation('multiple_people', 'Multiple people detected in frame.', 'high');
+      }
       
+      // Absence
+      if (detections.some(d => d.class === 'no_person')) {
+          reportViolation('absence', 'Candidate absence detected.', 'medium');
+      }
+      
+      // Mobile Phone
+      if (detections.some(d => d.class === 'cell phone' && d.score > 0.45)) {
+          reportViolation('mobile_phone', 'Mobile phone or electronic gadget identified.', 'high');
+      }
+
+      // Suspicious Objects (Books, Laptops)
+      const suspicious = detections.find(d => d.class === 'suspicious_object');
+      if (suspicious) {
+          reportViolation('forbidden_item', `Suspicious item (${suspicious.data?.originalClass}) detected in exam environment.`, 'medium');
+      }
+      
+      // Face Logic (Rotation & Visibility)
       const face = detections.find(d => d.class === 'face');
-      if (face && face.data?.pose !== 'center') reportViolation('gaze_aversion', `Looking ${face.data.pose.toUpperCase()}.`, 'low');
+      if (face) {
+          // 1. Partial Face Detection (Half face)
+          if (face.data?.isPartial) {
+              reportViolation('partial_face', 'Partial face detected. Please ensure full face is visible.', 'medium');
+          }
+          
+          // 2. Head Rotation (Left, Right, Down, Up)
+          const pose = face.data?.pose;
+          if (pose && pose !== 'center') {
+              let detail = 'Looking away from screen.';
+              if (pose === 'down') detail = 'Looking down (Suspicious activity).';
+              if (pose === 'left') detail = 'Looking left.';
+              if (pose === 'right') detail = 'Looking right.';
+              
+              reportViolation('gaze_aversion', detail, 'medium');
+          }
+      }
   }, [reportViolation]);
 
-  // 6. Timer
+  // 6. Fullscreen Monitoring
   useEffect(() => {
     if (loading || !sessionId) return;
+    const elem = document.documentElement;
+    const enterFullscreen = async () => {
+        try {
+            if (elem.requestFullscreen) {
+                await elem.requestFullscreen();
+            }
+        } catch (e) {
+            console.warn("Fullscreen request failed", e);
+        }
+    };
+    
+    // Slight delay to ensure user interaction if needed or just attempt
+    setTimeout(enterFullscreen, 500);
+
+    const handleFullscreenChange = () => {
+        if (!document.fullscreenElement) {
+            reportViolation('fullscreen_exit', 'Exited fullscreen mode.', 'high');
+            setTimeout(enterFullscreen, 1000);
+        }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    return () => {
+        document.removeEventListener('fullscreenchange', handleFullscreenChange);
+        if (document.fullscreenElement && document.exitFullscreen) {
+            document.exitFullscreen().catch(() => {});
+        }
+    };
+  }, [loading, sessionId, reportViolation]);
+
+  // 7. Timer
+  useEffect(() => {
+    if (loading || !sessionId || isExamBlocked) return;
     const timer = setInterval(() => {
       setTimeLeft(prev => {
         if(prev <= 0) { clearInterval(timer); handleFinishExam(); return 0; }
@@ -138,44 +233,54 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
       });
     }, 1000);
     return () => clearInterval(timer);
-  }, [loading, sessionId]);
+  }, [loading, sessionId, isExamBlocked]);
+
+  // Handle auto-submit on block
+  useEffect(() => {
+      if (isExamBlocked) {
+          const t = setTimeout(() => {
+              handleFinishExam();
+          }, 3000);
+          return () => clearTimeout(t);
+      }
+  }, [isExamBlocked]);
+
+  const handleRunCode = async (qid: string) => {
+      const q = questions.find(q => q.id === qid);
+      if (!q || !q.coding_details) return;
+      setIsExecuting(true);
+      try {
+          const res = await submissionsAPI.executeCode(
+              q.coding_details.programming_language || 'python',
+              answers[qid] || q.coding_details.starter_code || '',
+              q.coding_details.test_cases || []
+          );
+          setExecResults(prev => ({ ...prev, [qid]: res.results || [] }));
+      } catch (err) {
+          console.error('Execution Failed:', err);
+      } finally {
+          setIsExecuting(false);
+      }
+  };
 
   const handleFinishExam = async () => {
       try {
-          if (sessionId && !isNaN(parseInt(sessionId.toString()))) await proctoringAPI.endSession(parseInt(sessionId.toString()));
+          if (sessionId && !isNaN(parseInt(sessionId.toString()))) {
+              await proctoringAPI.endSession(parseInt(sessionId.toString()));
+          }
 
-          const correctCount = questions.filter(q => {
-              const userAns = answers[q.id];
-              if (!userAns) return false;
-              if (q.type === 'mcq') {
-                  const correctOpt = q.mcq_details?.options.find((o: any) => o.is_correct);
-                  return correctOpt && correctOpt.id.toString() === userAns;
-              }
-              return true;
-          }).length;
-
-          const totalMarks = questions.reduce((acc, q) => acc + q.marks, 0);
-          const earnedMarks = questions.reduce((acc, q) => {
-              const userAns = answers[q.id];
-              if (!userAns) return acc;
-              if (q.type === 'mcq') {
-                  const isCorrect = q.mcq_details?.options.find((o: any) => o.is_correct)?.id.toString() === userAns;
-                  return acc + (isCorrect ? q.marks : 0);
-              }
-              return acc + q.marks;
-          }, 0);
-
-          const finalScore = totalMarks > 0 ? Math.round((earnedMarks / totalMarks) * 100) : 0;
           const examDuration = (examDetails?.duration_minutes || 60) * 60;
           const timeElapsed = examDuration - timeLeft;
           
-          const result = {
-              examTitle: examDetails?.title || 'Assessment',
+          // Call new backend submission with answers and time
+          const response = await examsAPI.submitExam(examId!, answers, timeElapsed);
+          const resultData = response.result;
+
+          // Process violation incidents for display if needed specifically or just use backend response
+          const finalResult = {
+              ...resultData,
+              // Map backend result to frontend structure expected by results screen if different
               completedAt: new Date().toISOString(),
-              score: finalScore,
-              totalQuestions: questions.length,
-              correctAnswers: correctCount,
-              timeSpent: `${Math.floor(timeElapsed / 60)}m ${timeElapsed % 60}s`,
               questions: questions.map(q => ({
                   id: q.id,
                   text: q.text,
@@ -198,10 +303,13 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
               }
           };
 
-          localStorage.setItem('last_exam_result', JSON.stringify(result));
-          (window as any).lastExamResult = result;
+          localStorage.setItem('last_exam_result', JSON.stringify(finalResult));
+          (window as any).lastExamResult = finalResult;
           onNavigate('/exam-results');
-      } catch (err) { onNavigate('/exam-results'); }
+      } catch (err) { 
+          console.error('Submission failed:', err);
+          onNavigate('/exam-results'); 
+      }
   };
 
   const currentQ = questions[currentIdx];
@@ -275,17 +383,24 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
             <div className="w-1/2 bg-white flex flex-col border-l border-slate-200">
                 {currentQ.type === 'mcq' ? (
                     <div className="flex-1 p-12 overflow-y-auto flex flex-col justify-center bg-slate-50/30">
-                        <div className="max-w-md mx-auto w-full space-y-3">
+                        <div className="max-w-md mx-auto w-full space-y-4">
                             {currentQ.mcq_details?.options?.map((opt: any, idx: number) => {
                                 const isSelected = answers[currentQ.id] === opt.id.toString();
                                 return (
                                     <button key={opt.id} onClick={() => setAnswers(prev => ({ ...prev, [currentQ.id]: opt.id.toString() }))}
-                                        className={`w-full text-left p-5 rounded-2xl border-2 transition-all group ${isSelected ? 'border-indigo-500 bg-white shadow-xl shadow-indigo-500/10' : 'border-slate-200 bg-white hover:border-slate-300 shadow-sm'}`}>
-                                        <div className="flex items-center gap-4">
-                                            <div className={`w-8 h-8 rounded-xl border-2 flex items-center justify-center shrink-0 text-sm font-bold transition-colors ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-200 text-slate-300 group-hover:border-slate-400'}`}>
-                                                {String.fromCharCode(65 + idx)}
+                                        className={`w-full text-left p-5 rounded-2xl border-2 transition-all duration-300 group ${isSelected ? 'border-indigo-600 bg-indigo-50/50 shadow-lg shadow-indigo-500/10 scale-[1.02]' : 'border-slate-200 bg-white hover:border-indigo-300 hover:shadow-md'}`}>
+                                        <div className="flex items-center justify-between">
+                                            <div className="flex items-center gap-4">
+                                                <div className={`w-10 h-10 rounded-xl border-2 flex items-center justify-center shrink-0 text-sm font-bold transition-colors duration-300 ${isSelected ? 'border-indigo-600 bg-indigo-600 text-white shadow-md' : 'border-slate-200 text-slate-400 group-hover:border-indigo-300 group-hover:bg-indigo-50'}`}>
+                                                    {String.fromCharCode(65 + idx)}
+                                                </div>
+                                                <span className={`text-[16px] font-semibold transition-colors duration-300 ${isSelected ? 'text-indigo-950' : 'text-slate-700'}`}>{opt.option_text}</span>
                                             </div>
-                                            <span className={`text-[15px] font-medium ${isSelected ? 'text-slate-900' : 'text-slate-600'}`}>{opt.option_text}</span>
+                                            {isSelected && (
+                                                <div className="text-indigo-600 animate-in fade-in zoom-in duration-300">
+                                                    <CheckCircle className="w-6 h-6" />
+                                                </div>
+                                            )}
                                         </div>
                                     </button>
                                 );
@@ -294,12 +409,56 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
                         </div>
                     </div>
                 ) : (
-                    <div className="flex-1 bg-[#1E1E1E]">
-                        <CodeEditor 
-                            language={currentQ.coding_details?.programming_language || 'python'} 
-                            code={answers[currentQ.id] || currentQ.coding_details?.starter_code || ''} 
-                            onChange={(val) => setAnswers(prev => ({ ...prev, [currentQ.id]: val }))} 
-                        />
+                    <div className="flex-1 flex flex-col bg-[#1E1E1E] overflow-hidden">
+                        <div className="flex-1 overflow-hidden">
+                            <CodeEditor 
+                                language={currentQ.coding_details?.programming_language || 'python'} 
+                                code={answers[currentQ.id] !== undefined ? answers[currentQ.id] : (currentQ.coding_details?.starter_code || '')} 
+                                onChange={(val) => setAnswers(prev => ({ ...prev, [currentQ.id]: val }))} 
+                            />
+                        </div>
+                        {/* Terminal Area */}
+                        <div className="h-[250px] bg-[#111111] border-t border-[#333] flex flex-col shrink-0">
+                            <div className="flex items-center justify-between px-4 py-2 bg-[#1A1A1A] border-b border-[#333]">
+                                <div className="flex items-center gap-2 text-slate-400 text-xs font-mono font-bold uppercase tracking-wider">
+                                    <Terminal className="w-4 h-4" /> Console Status
+                                </div>
+                                <button 
+                                    onClick={() => handleRunCode(currentQ.id)}
+                                    disabled={isExecuting}
+                                    className="bg-emerald-600 hover:bg-emerald-500 text-white px-4 py-1.5 rounded text-xs font-bold transition-colors flex items-center gap-2 disabled:opacity-50">
+                                    {isExecuting ? <Loader2 className="w-3 h-3 animate-spin"/> : <Play className="w-3 h-3 text-white fill-current"/>}
+                                    Run & Test
+                                </button>
+                            </div>
+                            <div className="flex-1 overflow-y-auto p-4 custom-scrollbar font-mono text-xs space-y-3">
+                                {isExecuting ? (
+                                    <div className="text-slate-400 animate-pulse flex items-center gap-2">
+                                         <Loader2 className="w-4 h-4 animate-spin"/> Building and Executing...
+                                    </div>
+                                ) : execResults[currentQ.id] && execResults[currentQ.id].length > 0 ? (
+                                    execResults[currentQ.id].map((res: any, idx: number) => (
+                                        <div key={idx} className={`p-3 rounded border ${res.passed ? 'bg-emerald-900/10 border-emerald-800/30 text-emerald-400' : 'bg-red-900/10 border-red-800/30 text-red-400'}`}>
+                                            <div className="flex items-center gap-2 font-bold mb-1">
+                                                {res.passed ? <CheckCircle className="w-4 h-4"/> : <XCircle className="w-4 h-4"/>}
+                                                Test Case {idx + 1} {res.passed ? 'Passed' : 'Failed'}
+                                            </div>
+                                            {!res.passed && (
+                                                <div className="pl-6 opacity-90 mt-1 space-y-1">
+                                                    <div><span className="text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5">Output</span><div className="bg-black/40 p-2 rounded text-slate-300">{res.output || '(empty)'}</div></div>
+                                                    <div><span className="text-slate-500 uppercase tracking-wider text-[10px] block mb-0.5 mt-2">Expected</span><div className="bg-black/40 p-2 rounded text-slate-300">{res.expected || '(empty)'}</div></div>
+                                                </div>
+                                            )}
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="text-slate-500 h-full flex flex-col items-center justify-center opacity-50">
+                                        <Terminal className="w-8 h-8 mb-2 opacity-50"/>
+                                        Ready to compile. Click 'Run & Test'
+                                    </div>
+                                )}
+                            </div>
+                        </div>
                     </div>
                 )}
             </div>
@@ -330,7 +489,21 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
       {/* Overlays */}
       <FloatingWebcam className="bottom-24 right-6" onDetection={handleAIThreshold} />
 
-      {isLocked && (
+      {isExamBlocked && (
+        <div className="fixed inset-0 z-[70] bg-red-950/95 backdrop-blur-md flex flex-col items-center justify-center p-8 animate-fade-in">
+            <div className="bg-red-500/20 p-6 rounded-full mb-6 ring-8 ring-red-500/10">
+                <AlertTriangle className="w-16 h-16 text-red-500 animate-pulse" />
+            </div>
+            <h2 className="text-3xl font-black text-white mb-2 uppercase tracking-wide text-center">Exam Blocked</h2>
+            <p className="text-red-200 text-lg max-w-lg text-center mb-6 font-medium">Maximum violations reached ({maxViolations}/{maxViolations}). The secure environment has been compromised.</p>
+            <div className="bg-red-900/50 border border-red-500/30 rounded-xl p-4 flex items-center gap-3">
+                <Loader2 className="w-5 h-5 text-red-400 animate-spin" />
+                <span className="text-red-200 font-medium">Auto-submitting your assessment...</span>
+            </div>
+        </div>
+      )}
+
+      {isLocked && !isExamBlocked && (
         <div className="fixed inset-0 z-[60] bg-slate-900/95 backdrop-blur-sm flex flex-col items-center justify-center p-8 animate-fade-in">
             <div className="bg-red-500/20 p-6 rounded-full mb-6 ring-8 ring-red-500/10">
                 <AlertTriangle className="w-12 h-12 text-red-500" />

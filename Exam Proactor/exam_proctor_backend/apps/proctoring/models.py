@@ -1,8 +1,21 @@
 from django.db import models
-from django.contrib.auth import get_user_model
 from exam_proctor_backend.apps.exams.models import ExamEnrollment
+import os
+from django.utils import timezone
 
-User = get_user_model()
+def violation_screenshot_path(instance, filename):
+    """
+    Dynamic path: media/violations/{username}/{exam_title}/screenshot_{timestamp}.{ext}
+    """
+    ext = filename.split('.')[-1]
+    username = instance.enrollment.student.username
+    exam_title = instance.enrollment.exam.title.replace(' ', '_').lower()
+    timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
+    
+    # Sanitize inputs for file pathing
+    safe_username = username.lower()
+    
+    return os.path.join('violations', safe_username, exam_title, f"screenshot_{timestamp}.{ext}")
 
 class ProctoringViolation(models.Model):
     """Model to track proctoring violations."""
@@ -29,7 +42,7 @@ class ProctoringViolation(models.Model):
         default='medium'
     )
     
-    evidence_screenshot = models.ImageField(upload_to='violations/screenshots/', blank=True, null=True)
+    evidence_screenshot = models.ImageField(upload_to=violation_screenshot_path, blank=True, null=True)
     evidence_video_frame = models.FileField(upload_to='violations/frames/', blank=True, null=True)
     
     detected_at = models.DateTimeField(auto_now_add=True)

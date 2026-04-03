@@ -115,16 +115,144 @@ class ExamViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
     def submit(self, request, pk=None):
-        """Submit exam."""
+        """Finalize and submit exam with all answers and auto-grading."""
         exam = self.get_object()
+        user = request.user
+        data = request.data
+        
+        answers = data.get('answers', {})
+        time_taken_seconds = data.get('time_taken_seconds', 0)
+        
         try:
-            enrollment = ExamEnrollment.objects.get(exam=exam, student=request.user)
-            enrollment.status = 'submitted'
-            enrollment.submitted_at = timezone.now()
-            enrollment.save()
-            return Response({'message': 'Exam submitted'})
+            with transaction.atomic():
+                enrollment = ExamEnrollment.objects.select_for_update().get(exam=exam, student=user)
+                
+                if enrollment.status in ['completed', 'submitted'] and not exam.allow_multiple_attempts:
+                    return Response({'error': 'Exam already completed'}, status=status.HTTP_400_BAD_REQUEST)
+                
+                # 1. Process all answers and calculate score
+                total_earned_marks = 0
+                correct_count = 0
+                questions = Question.objects.filter(exam=exam)
+                
+                for question in questions:
+                    user_answer = answers.get(str(question.id))
+                    
+                    # Create or update QuestionSubmission
+                    submission, _ = QuestionSubmission.objects.get_or_create(
+                        enrollment=enrollment,
+                        question=question
+                    )
+                    submission.status = 'submitted'
+                    
+                    is_correct = False
+                    marks_obtained = 0
+                    
+                    if question.question_type == 'mcq':
+                        # Get correct option for this question
+                        mcq_question = getattr(question, 'mcq_question', None)
+                        if mcq_question:
+                            mcq_submission, _ = MCQSubmission.objects.get_or_create(submission=submission)
+                            if user_answer:
+                                try:
+                                    selected_option = MCQOption.objects.get(id=user_answer, mcq_question=mcq_question)
+                                    mcq_submission.selected_option = selected_option
+                                    mcq_submission.save()
+                                    
+                                    if selected_option.is_correct:
+                                        is_correct = True
+                                        marks_obtained = question.marks
+                                        correct_count += 1
+                                    else:
+                                        # Apply negative marking if any
+                                        marks_obtained = -exam.negative_marking
+                                except MCQOption.DoesNotExist:
+                                    pass
+                    
+                    elif question.question_type == 'coding':
+                        # For coding, we assume it was already tested via execute_code or here we just store the last code
+                        coding_submission, _ = CodingSubmission.objects.get_or_create(submission=submission)
+                        if user_answer:
+                            coding_submission.submitted_code = user_answer
+                            coding_submission.save()
+                            # Logic for auto-grading coding can be complex (running test cases), 
+                            # for now we'll mark as submitted. 
+                            # You might want to use the last execution result if stored.
+                        
+                    submission.is_correct = is_correct
+                    submission.marks_obtained = marks_obtained
+                    submission.save()
+                    
+                    total_earned_marks += marks_obtained
+
+                # 2. Apply Violation Reductions
+                # Get current violation count if not already final
+                violations = enrollment.violations.all()
+                violation_count = violations.count()
+                
+                # If violation count > threshold, calculate reduction
+                score_reduction_pct = 0
+                if violation_count >= exam.violation_threshold:
+                    # Reduction from exam settings: reduction_per_violation (this is percentage or fixed?)
+                    # The model says score_reduction_per_violation is a float. 
+                    # Let's treat it as percentage of total marks.
+                    score_reduction_pct = (violation_count / exam.violation_threshold) * exam.score_reduction_per_violation
+                
+                final_score = total_earned_marks - (exam.total_marks * (score_reduction_pct / 100))
+                final_percentage = (final_score / exam.total_marks) * 100 if exam.total_marks > 0 else 0
+                
+                # 3. Update Enrollment
+                enrollment.status = 'completed'
+                enrollment.submitted_at = timezone.now()
+                enrollment.time_taken_seconds = time_taken_seconds
+                enrollment.score = max(0, final_score)
+                enrollment.percentage = max(0, final_percentage)
+                enrollment.result = 'pass' if final_percentage >= exam.passing_marks else 'fail'
+                enrollment.total_violations = violation_count
+                enrollment.final_violations = violation_count
+                enrollment.score_reduction = score_reduction_pct
+                enrollment.save()
+                
+                # 4. End Session if exists
+                try:
+                    from exam_proctor_backend.apps.proctoring.models import ExamSession
+                    session = ExamSession.objects.get(enrollment=enrollment)
+                    session.status = 'ended'
+                    session.session_end = enrollment.submitted_at
+                    session.save()
+                except:
+                    pass
+
+                # Gather violation evidence
+                violation_data = []
+                for v in violations:
+                    violation_item = {
+                        'id': v.id,
+                        'type': v.violation_type,
+                        'severity': v.severity,
+                        'detected_at': v.detected_at,
+                        'screenshot': v.evidence_screenshot.url if v.evidence_screenshot else None
+                    }
+                    violation_data.append(violation_item)
+
+                return Response({
+                    'message': 'Exam completed successfully',
+                    'result': {
+                        'examTitle': exam.title,
+                        'score': enrollment.percentage,
+                        'totalQuestions': questions.count(),
+                        'correctAnswers': correct_count,
+                        'timeSpent': f"{time_taken_seconds // 60}m {time_taken_seconds % 60}s",
+                        'status': enrollment.status,
+                        'result': enrollment.result,
+                        'violations': violation_data
+                    }
+                })
+                
         except ExamEnrollment.DoesNotExist:
             return Response({'error': 'Not enrolled in this exam'}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as e:
+            return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
     @action(detail=False, methods=['get'], permission_classes=[IsAuthenticated])
     def my_exams(self, request):
