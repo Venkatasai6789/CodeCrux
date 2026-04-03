@@ -64,19 +64,28 @@ class ProctoringViolationViewSet(viewsets.ModelViewSet):
             # --- Organized Snapshot Storage Execution (Standardized) ---
             if snapshot_data:
                 try:
-                    # Clean up base64 string
+                    import base64
+                    from django.core.files.base import ContentFile
+                    from django.utils import timezone
+                    
+                    # Handle Data URL vs URL vs Raw Base64
                     if ';base64,' in snapshot_data:
                         format, imgstr = snapshot_data.split(';base64,')
                         ext = format.split('/')[-1].split(';')[0]
+                    elif str(snapshot_data).startswith('http'):
+                        logger.info(f"System: Received snapshot URL: {snapshot_data}. Skipping file conversion.")
+                        imgstr = None
                     else:
                         imgstr = snapshot_data
                         ext = 'png'
                     
-                    image_content = base64.b64decode(imgstr)
-                    filename = f"capture_{timezone.now().strftime('%H%M%S')}.{ext}"
-                    violation.evidence_screenshot.save(filename, ContentFile(image_content), save=False)
+                    if imgstr:
+                        image_content = base64.b64decode(imgstr)
+                        filename = f"capture_{timezone.now().strftime('%H%M%S')}.{ext}"
+                        violation.evidence_screenshot.save(filename, ContentFile(image_content), save=False)
+                        logger.info(f"System: Saved snapshot capture for violation {violation.id}")
                 except Exception as img_err:
-                    print(f"Error saving snapshot: {img_err}")
+                    logger.error(f"System: Failed to process violation snapshot: {str(img_err)}")
 
             if 'evidence_screenshot' in request.FILES:
                 violation.evidence_screenshot = request.FILES['evidence_screenshot']

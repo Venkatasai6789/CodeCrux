@@ -207,7 +207,7 @@ export const ProctoringReport: React.FC<ProctoringReportProps> = ({ session }) =
                               <img 
                                   src={incident.snapshot} 
                                   alt={incident.type} 
-                                  className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-105"
+                                  className="w-full h-full object-contain transition-transform duration-700 group-hover:scale-105"
                               />
                               <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/60 backdrop-blur-md text-white text-[9px] font-black rounded-lg uppercase tracking-widest flex items-center gap-1 shadow-lg">
                                   <Clock className="w-3 h-3 text-indigo-300" />

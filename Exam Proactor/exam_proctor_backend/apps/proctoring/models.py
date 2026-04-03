@@ -12,7 +12,9 @@ def violation_screenshot_path(instance, filename):
     def sanitize(text):
         if not text:
             return "unknown"
-        return re.sub(r'[^a-zA-Z0-9\s_]', '', text).strip().replace(' ', '_').lower()
+        # Stronger sanitization for directory names
+        clean = re.sub(r'[^a-zA-Z0-9\s_-]', '', str(text)).strip().replace(' ', '_').lower()
+        return clean if clean else "unnamed"
 
     ext = filename.split('.')[-1]
     student = instance.enrollment.student
@@ -34,8 +36,8 @@ def violation_screenshot_path(instance, filename):
     # --- Organized Cross-Platform Persistence ---
     timestamp = timezone.now().strftime('%Y%m%d_%H%M%S')
     
-    # Using forward slashes explicitly for Django storage and Windows cross-compatibility
-    return f"violations/{student_dir}/{exam_dir}/{timestamp}.{ext}"
+    # Format: violations/{student_dir}/{course_dir}/{exam_dir}/{timestamp}.{ext}
+    return f"violations/{student_dir}/{course_dir}/{exam_dir}/{timestamp}.{ext}"
 
 
 
