@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { 
   FileText, Download, Search, Filter, Calendar, 
   ChevronRight, AlertTriangle, CheckCircle, BarChart2
@@ -12,7 +13,8 @@ interface FacultyReportsProps {
 }
 
 export const FacultyReportsScreen: React.FC<FacultyReportsProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
 
   const reports = [
     { id: 1, name: 'CS101 Midterm Analysis', type: 'Exam Report', date: 'Oct 25, 2024', status: 'Ready', size: '2.4 MB' },

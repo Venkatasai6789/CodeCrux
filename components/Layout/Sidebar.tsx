@@ -15,6 +15,7 @@ import {
   ClipboardList
 } from 'lucide-react';
 import { User as UserType } from '../../types';
+import { useAuth } from '../../services/authContext';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -24,6 +25,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentUser, onNavigate, currentPath }) => {
+  const { logout } = useAuth();
   const [hoveredItem, setHoveredItem] = useState<{ label: string; top: number; left: number } | null>(null);
 
   const studentItems = [
@@ -151,7 +153,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ isOpen, currentUser, onNavigat
             })}
               
               <button 
-                  onClick={() => onNavigate('/login')}
+                  onClick={() => {
+                    logout();
+                    onNavigate('/login');
+                  }}
                   onMouseEnter={(e) => handleMouseEnter(e, 'Sign Out')}
                   onMouseLeave={handleMouseLeave}
                   className={`

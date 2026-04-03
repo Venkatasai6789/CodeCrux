@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User, Course } from '../types';
+import { useAuth } from '../services/authContext';
 import { 
   Plus, Search, MoreVertical, Users, BookOpen, Clock, 
   BarChart2, Edit, Trash2, Eye, Filter
@@ -12,7 +13,8 @@ interface FacultyCoursesProps {
 }
 
 export const FacultyCoursesScreen: React.FC<FacultyCoursesProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
 
   // Mock Courses
   const [courses, setCourses] = useState<Course[]>([

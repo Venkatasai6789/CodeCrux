@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { 
   TrendingUp, Users, BookOpen, Activity, ChevronDown, Download, 
   Share2, FileText, AlertTriangle, CheckCircle, Search, Filter,
@@ -66,7 +67,8 @@ const ANALYTICS_DATA = {
 };
 
 export const FacultyAnalyticsScreen: React.FC<FacultyAnalyticsProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
   const [period, setPeriod] = useState('This Semester');
 
   return (

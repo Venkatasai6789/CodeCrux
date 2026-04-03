@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User, ExamQuestion } from '../types';
+import { useAuth } from '../services/authContext';
 import { Input } from '../components/ui/Input';
 import { Toggle } from '../components/ui/Toggle';
 import { Button } from '../components/ui/Button';
@@ -19,7 +20,8 @@ interface FacultyExamCreateProps {
 type Step = 'details' | 'source' | 'editor' | 'settings';
 
 export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
   
   const [currentStep, setCurrentStep] = useState(1);
   const [isProcessingAI, setIsProcessingAI] = useState(false);
@@ -376,7 +378,7 @@ export const FacultyExamCreateScreen: React.FC<FacultyExamCreateProps> = ({ onNa
 };
 
 // --- Sub-Component: Question Editor Card ---
-const QuestionEditorCard = ({ question, index, onDelete }: { question: ExamQuestion, index: number, onDelete: () => void }) => {
+const QuestionEditorCard: React.FC<{ question: ExamQuestion, index: number, onDelete: () => void }> = ({ question, index, onDelete }) => {
     const [isExpanded, setIsExpanded] = useState(true);
 
     return (

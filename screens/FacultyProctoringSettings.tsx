@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { Toggle } from '../components/ui/Toggle';
 import { Button } from '../components/ui/Button';
 import { 
@@ -17,7 +18,8 @@ interface FacultyProctoringSettingsProps {
 type ProctoringPreset = 'lenient' | 'moderate' | 'strict';
 
 export const FacultyProctoringSettingsScreen: React.FC<FacultyProctoringSettingsProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
   
   const [showToast, setShowToast] = useState(false);
 

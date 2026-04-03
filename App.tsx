@@ -1,5 +1,6 @@
 
 import React, { useState, useEffect } from 'react';
+import { AuthProvider, useAuth } from './services/authContext';
 import { LoginScreen } from './screens/Login';
 import { RegisterScreen } from './screens/Register';
 import { DashboardScreen } from './screens/Dashboard';
@@ -25,13 +26,12 @@ import { SettingsScreen } from './screens/Settings';
 import { HelpCenterScreen } from './screens/HelpCenter';
 import { FacultyCoursesScreen } from './screens/FacultyCourses';
 import { FacultyReportsScreen } from './screens/FacultyReports';
+import { ProctoringTestScreen } from './screens/ProctoringTest';
 
-const App: React.FC = () => {
-  // Using simple state-based routing since we can't use React Router DOM in this environment easily
-  // In a real app, use react-router-dom
+const AppRoutes: React.FC = () => {
+  const { user, isAuthenticated, isLoading, logout } = useAuth();
   const [currentPath, setCurrentPath] = useState<string>('/login');
 
-  // Handle hash changes for simple navigation
   useEffect(() => {
     const handleHashChange = () => {
       const hash = window.location.hash.replace('#', '') || '/login';
@@ -39,21 +39,60 @@ const App: React.FC = () => {
     };
 
     window.addEventListener('hashchange', handleHashChange);
-    handleHashChange(); // Initial check
+    handleHashChange();
 
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, []);
+
+  // After auth loads, redirect appropriately
+  useEffect(() => {
+    if (!isLoading) {
+      if (isAuthenticated && (currentPath === '/login' || currentPath === '/register')) {
+        // Already logged in, redirect to appropriate dashboard
+        if (user?.role === 'instructor' || user?.role === 'admin') {
+          navigate('/faculty-dashboard');
+        } else {
+          navigate('/dashboard');
+        }
+      } else if (!isAuthenticated && currentPath !== '/login' && currentPath !== '/register') {
+        navigate('/login');
+      }
+    }
+  }, [isLoading, isAuthenticated]);
 
   const navigate = (path: string) => {
     window.location.hash = path;
     setCurrentPath(path);
   };
 
+  const handleLogout = () => {
+    logout();
+    navigate('/login');
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-slate-50">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
+          <p className="text-slate-500 text-sm font-medium">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Public routes
+  if (!isAuthenticated) {
+    if (currentPath === '/register') {
+      return <RegisterScreen onNavigate={navigate} />;
+    }
+    return <LoginScreen onNavigate={navigate} />;
+  }
+
+  // Protected routes
   return (
     <div className="font-sans antialiased text-slate-900 bg-white min-h-screen">
-      {currentPath === '/register' ? (
-        <RegisterScreen onNavigate={navigate} />
-      ) : currentPath === '/dashboard' ? (
+      {currentPath === '/dashboard' ? (
         <DashboardScreen onNavigate={navigate} />
       ) : currentPath === '/faculty-dashboard' ? (
         <FacultyDashboardScreen onNavigate={navigate} />
@@ -93,16 +132,31 @@ const App: React.FC = () => {
         <QuizScreen onNavigate={navigate} />
       ) : currentPath === '/lab' ? (
         <PracticeLabScreen onNavigate={navigate} />
-      ) : currentPath === '/proctoring' ? (
+      ) : currentPath.startsWith('/proctoring') ? (
         <ProctoringScreen onNavigate={navigate} />
-      ) : currentPath === '/live-exam' ? (
+      ) : currentPath.startsWith('/live-exam') ? (
         <LiveExamScreen onNavigate={navigate} />
       ) : currentPath === '/exam-results' ? (
         <ExamResultsScreen onNavigate={navigate} />
+      ) : currentPath === '/proctoring-test' ? (
+        <ProctoringTestScreen onNavigate={navigate} />
       ) : (
-        <LoginScreen onNavigate={navigate} />
+        // Default: redirect based on role
+        user?.role === 'instructor' || user?.role === 'admin' ? (
+          <FacultyDashboardScreen onNavigate={navigate} />
+        ) : (
+          <DashboardScreen onNavigate={navigate} />
+        )
       )}
     </div>
+  );
+};
+
+const App: React.FC = () => {
+  return (
+    <AuthProvider>
+      <AppRoutes />
+    </AuthProvider>
   );
 };
 

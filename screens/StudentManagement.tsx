@@ -1,12 +1,14 @@
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
+import { usersAPI } from '../services/apiService';
 import { 
   Search, Plus, Upload, MessageSquare, ChevronDown, 
   MoreHorizontal, Mail, Edit, Trash2, X, Check, ArrowUpDown,
   User as UserIcon, BookOpen, TrendingUp, Clock, Calendar,
-  GraduationCap, Send
+  GraduationCap, Send, Loader2
 } from 'lucide-react';
 
 interface StudentManagementProps {
@@ -27,48 +29,52 @@ interface Student {
   avatar: string;
 }
 
-// --- Mock Data ---
-const STUDENTS_DATA: Student[] = [
-  { id: '1', name: 'Alex Johnson', email: 'alex.j@uni.edu', status: 'Active', courses: ['CS101', 'CS102'], performance: 92, grade: 'A', lastActive: 'Today at 2:34 PM', enrollmentDate: 'Sep 12, 2023', avatar: 'https://ui-avatars.com/api/?name=Alex+Johnson&background=random' },
-  { id: '2', name: 'Maria Garcia', email: 'm.garcia@uni.edu', status: 'Active', courses: ['CS101', 'BIO200', 'MATH101'], performance: 78, grade: 'C+', lastActive: 'Yesterday', enrollmentDate: 'Sep 10, 2023', avatar: 'https://ui-avatars.com/api/?name=Maria+Garcia&background=random' },
-  { id: '3', name: 'James Wilson', email: 'j.wilson@uni.edu', status: 'Inactive', courses: ['CS101'], performance: 45, grade: 'F', lastActive: '2 weeks ago', enrollmentDate: 'Sep 15, 2023', avatar: 'https://ui-avatars.com/api/?name=James+Wilson&background=random' },
-  { id: '4', name: 'Sarah Chen', email: 'sarah.c@uni.edu', status: 'Active', courses: ['CS102', 'ALG200'], performance: 98, grade: 'A+', lastActive: 'Today at 10:00 AM', enrollmentDate: 'Aug 20, 2023', avatar: 'https://ui-avatars.com/api/?name=Sarah+Chen&background=random' },
-  { id: '5', name: 'Michael Brown', email: 'mike.b@uni.edu', status: 'Pending', courses: [], performance: 0, grade: '-', lastActive: 'Never', enrollmentDate: 'Oct 01, 2023', avatar: 'https://ui-avatars.com/api/?name=Michael+Brown&background=random' },
-  { id: '6', name: 'Emily Davis', email: 'emily.d@uni.edu', status: 'Active', courses: ['BIO200'], performance: 88, grade: 'B+', lastActive: '3 days ago', enrollmentDate: 'Sep 05, 2023', avatar: 'https://ui-avatars.com/api/?name=Emily+Davis&background=random' },
-  { id: '7', name: 'David Lee', email: 'david.l@uni.edu', status: 'Active', courses: ['CS101', 'CS102', 'MATH101'], performance: 82, grade: 'B', lastActive: 'Today at 1:15 PM', enrollmentDate: 'Sep 12, 2023', avatar: 'https://ui-avatars.com/api/?name=David+Lee&background=random' },
-];
-
-// Helper for consistent mock grades per course
-const getMockCourseDetails = (studentId: string, courseName: string) => {
-    const seed = studentId.charCodeAt(0) + courseName.charCodeAt(0);
-    const grades = [
-        { grade: 'A', score: '95%', color: 'text-emerald-600' },
-        { grade: 'A-', score: '92%', color: 'text-emerald-600' },
-        { grade: 'B+', score: '88%', color: 'text-indigo-600' },
-        { grade: 'B', score: '84%', color: 'text-indigo-600' },
-        { grade: 'C+', score: '78%', color: 'text-amber-600' },
-    ];
-    return grades[seed % grades.length];
-};
+// Data fetched from API — no mock data
 
 export const StudentManagementScreen: React.FC<StudentManagementProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
-  
-  // State
+  const { user: authUser } = useAuth();
+  const facultyUser: User = {
+    id: String(authUser?.id || ''),
+    name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty',
+    email: authUser?.email || '',
+    role: 'faculty',
+  };
+
+  // Data from API
+  const [studentsData, setStudentsData] = useState<Student[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+
+  // UI State
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [activeProfile, setActiveProfile] = useState<Student | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [activeSegment, setActiveSegment] = useState<'All' | 'Active' | 'Inactive' | 'Pending'>('All');
   const [profileTab, setProfileTab] = useState<'Overview' | 'Courses' | 'Performance' | 'Communications'>('Overview');
 
+  // Fetch students from API
+  useEffect(() => {
+    const fetchStudents = async () => {
+      setIsLoading(true);
+      try {
+        const data = await usersAPI.getStudents();
+        setStudentsData(data || []);
+      } catch (err) {
+        console.error('Failed to load students:', err);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    fetchStudents();
+  }, []);
+
   // Filtering Logic
   const filteredStudents = useMemo(() => {
-    return STUDENTS_DATA.filter(s => {
+    return studentsData.filter(s => {
       const matchesSearch = s.name.toLowerCase().includes(searchQuery.toLowerCase()) || s.email.toLowerCase().includes(searchQuery.toLowerCase());
       const matchesSegment = activeSegment === 'All' ? true : s.status === activeSegment;
       return matchesSearch && matchesSegment;
     });
-  }, [searchQuery, activeSegment]);
+  }, [searchQuery, activeSegment, studentsData]);
 
   // Selection Handlers
   const toggleSelection = (id: string) => {
@@ -151,10 +157,10 @@ export const StudentManagementScreen: React.FC<StudentManagementProps> = ({ onNa
                         <h3 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-3 px-2">Segments</h3>
                         <div className="space-y-1">
                             {[
-                                { id: 'All', label: 'All Students', count: STUDENTS_DATA.length },
-                                { id: 'Active', label: 'Active', count: STUDENTS_DATA.filter(s => s.status === 'Active').length },
-                                { id: 'Inactive', label: 'Inactive', count: STUDENTS_DATA.filter(s => s.status === 'Inactive').length },
-                                { id: 'Pending', label: 'Pending Approval', count: STUDENTS_DATA.filter(s => s.status === 'Pending').length },
+                                { id: 'All', label: 'All Students', count: studentsData.length },
+                                { id: 'Active', label: 'Active', count: studentsData.filter(s => s.status === 'Active').length },
+                                { id: 'Inactive', label: 'Inactive', count: studentsData.filter(s => s.status === 'Inactive').length },
+                                { id: 'Pending', label: 'Pending Approval', count: studentsData.filter(s => s.status === 'Pending').length },
                             ].map(seg => (
                                 <button
                                     key={seg.id}
@@ -406,7 +412,7 @@ export const StudentManagementScreen: React.FC<StudentManagementProps> = ({ onNa
                             {profileTab === 'Courses' && (
                                 <div className="space-y-4">
                                     {activeProfile.courses.map((course) => {
-                                        const details = getMockCourseDetails(activeProfile.id, course);
+                                        const gradeColor = activeProfile.grade.startsWith('A') ? 'text-emerald-600' : activeProfile.grade.startsWith('B') ? 'text-indigo-600' : activeProfile.grade.startsWith('C') ? 'text-amber-600' : 'text-slate-400';
                                         return (
                                             <div key={course} className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex justify-between items-center group hover:border-indigo-200 transition-all">
                                                 <div>
@@ -418,7 +424,7 @@ export const StudentManagementScreen: React.FC<StudentManagementProps> = ({ onNa
                                                 </div>
                                                 <div className="flex items-center gap-4">
                                                     <div className="text-right">
-                                                        <p className={`text-sm font-bold ${details.color}`}>{details.grade}</p>
+                                                        <p className={`text-sm font-bold ${gradeColor}`}>{activeProfile.grade}</p>
                                                         <p className="text-[10px] text-slate-400 font-medium">Current Grade</p>
                                                     </div>
                                                     <button 
@@ -468,12 +474,12 @@ export const StudentManagementScreen: React.FC<StudentManagementProps> = ({ onNa
                                             </thead>
                                             <tbody className="divide-y divide-slate-100">
                                                 {activeProfile.courses.map((c) => {
-                                                    const details = getMockCourseDetails(activeProfile.id, c);
+                                                    const gColor = activeProfile.grade.startsWith('A') ? 'text-emerald-600' : activeProfile.grade.startsWith('B') ? 'text-indigo-600' : activeProfile.grade.startsWith('C') ? 'text-amber-600' : 'text-slate-400';
                                                     return (
                                                         <tr key={c} className="hover:bg-slate-50">
                                                             <td className="px-4 py-3 font-medium text-slate-800">{c}</td>
-                                                            <td className={`px-4 py-3 text-right font-bold ${details.color}`}>{details.grade}</td>
-                                                            <td className="px-4 py-3 text-right text-slate-500 font-mono">{details.score}</td>
+                                                            <td className={`px-4 py-3 text-right font-bold ${gColor}`}>{activeProfile.grade}</td>
+                                                            <td className="px-4 py-3 text-right text-slate-500 font-mono">{activeProfile.performance}%</td>
                                                         </tr>
                                                     );
                                                 })}

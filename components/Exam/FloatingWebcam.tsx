@@ -1,119 +1,137 @@
-
-import React, { useState, useEffect, useRef } from 'react';
-import { Minimize2, Maximize2, Video, Mic, Wifi, AlertTriangle, VideoOff } from 'lucide-react';
+import React, { useRef, useState, useEffect } from 'react';
+import { CameraPreview, CameraHandle } from '../Proctoring/CameraPreview';
+import { useObjectDetection } from '../../hooks/useObjectDetection';
+import { AlertCircle, ShieldCheck, ShieldAlert, Cpu } from 'lucide-react';
 
 interface FloatingWebcamProps {
   className?: string;
+  onDetection: (detections: any[]) => void;
 }
 
-export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = "bottom-6 right-6" }) => {
-  const [isMinimized, setIsMinimized] = useState(false);
-  const [hasPermission, setHasPermission] = useState(true);
-  const videoRef = useRef<HTMLVideoElement>(null);
+export const FloatingWebcam: React.FC<FloatingWebcamProps> = ({ className = '', onDetection }) => {
+  const cameraHandleRef = useRef<CameraHandle>(null);
+  const [hasPermission, setHasPermission] = useState(false);
+  const [faceDetected, setFaceDetected] = useState(false);
+  
+  // Use the exposed videoElement from the camera handle
+  const { detections, loading: modelLoading } = useObjectDetection(
+    { current: cameraHandleRef.current?.videoElement || null }, 
+    hasPermission
+  );
 
   useEffect(() => {
-    // Start Camera
-    const startCam = async () => {
-        try {
-            const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
-            if (videoRef.current) {
-                videoRef.current.srcObject = stream;
-                setHasPermission(true);
-            }
-        } catch (e) {
-            console.warn("FloatingWebcam: Camera access denied or unavailable. Switching to fallback UI.");
-            setHasPermission(false);
-        }
-    };
-    startCam();
-  }, []);
+    if (!modelLoading && detections.length > 0) {
+      onDetection(detections);
+      const face = detections.find(d => d.class === 'face');
+      setFaceDetected(!!face);
+    } else if (detections.length === 0) {
+      setFaceDetected(false);
+    }
+  }, [detections, modelLoading, onDetection]);
 
-  if (isMinimized) {
-      return (
-          <div className={`fixed z-50 animate-fade-in ${className}`}>
-              <button 
-                onClick={() => setIsMinimized(false)}
-                className="bg-slate-900/95 backdrop-blur-md text-white px-4 py-3 rounded-full shadow-2xl border border-slate-700/50 flex items-center gap-3 hover:scale-105 transition-transform group"
-              >
-                  <div className="relative">
-                    <span className="flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-red-500"></span>
-                    </span>
-                  </div>
-                  <div className="flex flex-col items-start">
-                      <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none mb-0.5">Proctoring</span>
-                      <span className="text-xs font-bold text-white leading-none">Active</span>
-                  </div>
-                  <Maximize2 className="w-4 h-4 text-slate-400 group-hover:text-white ml-2" />
-              </button>
-          </div>
-      );
-  }
+  const activeViolations = detections.filter(d => 
+    d.class === 'multiple_people_detected' || 
+    d.class === 'cell phone' || 
+    (d.class === 'face' && d.data?.pose !== 'center')
+  );
 
   return (
-    <div className={`fixed z-50 w-64 md:w-72 bg-slate-900 rounded-2xl shadow-2xl border border-slate-700 overflow-hidden animate-slide-up transition-all duration-300 hover:shadow-indigo-500/20 ${className}`}>
-        {/* Header / Controls */}
-        <div className="h-8 bg-slate-800/80 backdrop-blur-md flex items-center justify-between px-3 cursor-move border-b border-slate-700">
-            <div className="flex items-center gap-2">
-                <div className="w-2 h-2 rounded-full bg-red-500 animate-pulse"></div>
-                <span className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">Live Rec</span>
-            </div>
-            <div className="flex items-center gap-2">
-                <Wifi className="w-3 h-3 text-emerald-400" />
-                <button 
-                    onClick={() => setIsMinimized(true)}
-                    className="p-1 hover:bg-slate-700 rounded text-slate-400 hover:text-white transition-colors"
-                    title="Minimize View"
-                >
-                    <Minimize2 className="w-3 h-3" />
-                </button>
+    <div className={`fixed z-50 w-72 group transition-all duration-500 hover:scale-105 ${className}`}>
+      <div className="bg-white rounded-3xl shadow-2xl overflow-hidden border-4 border-white ring-1 ring-slate-200">
+        
+        {/* Detection Overlay */}
+        <div className="relative">
+            <CameraPreview 
+                ref={cameraHandleRef}
+                permissionGranted={hasPermission}
+                onPermissionGranted={() => setHasPermission(true)}
+                faceDetected={faceDetected}
+                autoStart={true}
+            />
+            
+            {/* AI Status Scanning Line */}
+            {hasPermission && !modelLoading && (
+                <div className="absolute inset-0 pointer-events-none overflow-hidden">
+                    <div className="w-full h-0.5 bg-indigo-500/50 shadow-[0_0_15px_rgba(79,70,229,0.5)] animate-scan-fast"></div>
+                </div>
+            )}
+
+            {/* AI Indicators */}
+            <div className="absolute top-3 right-3 flex flex-col gap-2">
+                <StatusBadge 
+                    icon={Cpu} 
+                    label={modelLoading ? 'MODELS LOADING...' : 'AI ACTIVE'} 
+                    active={!modelLoading}
+                    pulse={modelLoading}
+                />
+                {activeViolations.length > 0 && (
+                    <div className="bg-red-600 text-white text-[10px] font-black px-2 py-1 rounded-lg animate-bounce flex items-center gap-1 shadow-lg">
+                        <AlertCircle className="w-3 h-3" /> ALERT
+                    </div>
+                )}
             </div>
         </div>
 
-        {/* Video Feed */}
-        <div className="relative aspect-video bg-black group">
-            {hasPermission ? (
-                <video 
-                    ref={videoRef}
-                    autoPlay 
-                    muted 
-                    playsInline
-                    className="w-full h-full object-cover transform -scale-x-100 opacity-90"
-                />
-            ) : (
-                <div className="w-full h-full flex flex-col items-center justify-center bg-slate-900">
-                    <img 
-                        src="https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?q=80&w=1000&auto=format&fit=crop" 
-                        alt="Simulated Camera" 
-                        className="w-full h-full object-cover opacity-50"
-                    />
-                    <div className="absolute inset-0 flex items-center justify-center bg-black/40">
-                        <div className="px-2 py-1 bg-yellow-500/90 text-black text-[10px] font-bold rounded shadow-sm">
-                            DEMO MODE
-                        </div>
-                    </div>
-                </div>
-            )}
-            
-            {/* Status Overlay */}
-            <div className="absolute bottom-2 left-2 flex gap-1">
-                <div className="bg-black/50 backdrop-blur-md p-1 rounded border border-white/10" title="Video Active">
-                    {hasPermission ? <Video className="w-3 h-3 text-white" /> : <VideoOff className="w-3 h-3 text-red-400" />}
-                </div>
-                <div className="bg-black/50 backdrop-blur-md p-1 rounded border border-white/10" title="Mic Active">
-                    <Mic className="w-3 h-3 text-white" />
-                </div>
+        {/* Footer Info */}
+        <div className="bg-slate-900 p-3 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+                <div className={`w-2 h-2 rounded-full ${faceDetected ? 'bg-emerald-500 shadow-[0_0_8px_#10B981]' : 'bg-amber-500 animate-pulse'}`}></div>
+                <span className="text-[10px] font-bold text-white uppercase tracking-wider">
+                    {modelLoading ? 'Calibrating...' : faceDetected ? 'Identity Secure' : 'Face Detection Active'}
+                </span>
             </div>
+            {faceDetected ? <ShieldCheck className="w-4 h-4 text-emerald-400" /> : <ShieldAlert className="w-4 h-4 text-amber-400" />}
         </div>
-        
-        {/* Anti-Cheat Status */}
-        <div className="bg-slate-800 px-3 py-2 flex items-center justify-between">
-            <span className="text-[10px] font-medium text-slate-400">Environment Check</span>
-            <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1">
-                Secure <span className="text-emerald-500">✓</span>
-            </span>
-        </div>
+      </div>
+
+      {/* Persistent Violation Banners */}
+      <div className="mt-3 space-y-2 pointer-events-none">
+          {detections.some(d => d.class === 'cell phone' && d.score > 0.6) && (
+              <div className="bg-red-600 text-white p-3 rounded-2xl shadow-xl animate-shake flex items-center gap-3 border-2 border-white/20">
+                  <div className="bg-white/20 p-2 rounded-xl"><AlertCircle className="w-5 h-5" /></div>
+                  <div>
+                      <p className="font-black text-xs uppercase">Mobile Phone Detected</p>
+                      <p className="text-[10px] opacity-80 font-bold">Possible Violation Recorded</p>
+                  </div>
+              </div>
+          )}
+          {detections.some(d => d.class === 'multiple_people_detected') && (
+              <div className="bg-red-600 text-white p-3 rounded-2xl shadow-xl animate-shake flex items-center gap-3 border-2 border-white/20">
+                  <div className="bg-white/20 p-2 rounded-xl"><AlertCircle className="w-5 h-5" /></div>
+                  <div>
+                      <p className="font-black text-xs uppercase">Multiple People Detected</p>
+                      <p className="text-[10px] opacity-80 font-bold">Secure Environment Compromised</p>
+                  </div>
+              </div>
+          )}
+      </div>
+
+      <style>{`
+        @keyframes scan-fast {
+          0% { top: 0; }
+          100% { top: 100%; }
+        }
+        .animate-scan-fast {
+          position: absolute;
+          width: 100%;
+          animation: scan-fast 3s linear infinite;
+        }
+        @keyframes shake {
+          0%, 100% { transform: translateX(0); }
+          25% { transform: translateX(-4px); }
+          75% { transform: translateX(4px); }
+        }
+        .animate-shake {
+          animation: shake 0.2s ease-in-out infinite;
+        }
+      `}</style>
     </div>
   );
 };
+
+const StatusBadge = ({ icon: Icon, label, active, pulse }: { icon: any, label: string, active: boolean, pulse: boolean }) => (
+    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-lg backdrop-blur-md border shadow-sm transition-all ${active ? 'bg-emerald-500/90 border-emerald-400 text-white' : 'bg-slate-900/80 border-slate-700 text-slate-300'} ${pulse ? 'animate-pulse' : ''}`}>
+        <Icon className={`w-3 h-3 ${active ? 'text-white' : 'text-slate-400'}`} />
+        <span className="text-[9px] font-black uppercase tracking-tighter">{label}</span>
+    </div>
+);

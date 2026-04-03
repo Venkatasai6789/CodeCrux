@@ -4,6 +4,7 @@ import { Input } from '../components/ui/Input';
 import { Button } from '../components/ui/Button';
 import { ValidationStatus, PasswordStrength } from '../types';
 import { Check, ChevronDown } from 'lucide-react';
+import { authAPI } from '../services/apiService';
 
 interface RegisterScreenProps {
   onNavigate: (path: string) => void;
@@ -48,21 +49,41 @@ export const RegisterScreen: React.FC<RegisterScreenProps> = ({ onNavigate }) =>
     setFormData({ ...formData, [e.target.name]: e.target.value });
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!agreed) return;
+    if (formData.password !== formData.confirmPassword) return;
 
     setIsLoading(true);
-    
-    // Simulate API Success
-    setTimeout(() => {
-        setIsLoading(false);
-        setIsSuccess(true);
-        // Redirect after success animation
-        setTimeout(() => {
-            onNavigate('/dashboard'); 
-        }, 2000);
-    }, 1500);
+
+    try {
+      const nameParts = formData.fullName.trim().split(' ');
+      const firstName = nameParts[0] || '';
+      const lastName = nameParts.slice(1).join(' ') || '';
+
+      // Register via API
+      await authAPI.register({
+        username: formData.email.split('@')[0],
+        email: formData.email,
+        password: formData.password,
+        password_confirm: formData.confirmPassword,
+        role: 'student',
+        first_name: firstName,
+        last_name: lastName,
+      });
+
+      // Auto-login after registration
+      await authAPI.login(formData.email.split('@')[0], formData.password);
+
+      setIsLoading(false);
+      setIsSuccess(true);
+      setTimeout(() => {
+        onNavigate('/dashboard');
+      }, 2000);
+    } catch (err: any) {
+      setIsLoading(false);
+      alert(err.message || 'Registration failed. Please try again.');
+    }
   };
 
   // Success Overlay (Confetti Simulation)

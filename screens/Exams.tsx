@@ -1,9 +1,9 @@
-
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { ExamCard } from '../components/Dashboard/ExamCard';
 import { User, Exam } from '../types';
-import { Search, Filter, Calendar, Clock, AlertCircle } from 'lucide-react';
+import { Search, Filter, Calendar, Clock, AlertCircle, Loader2 } from 'lucide-react';
+import { examsAPI, authAPI } from '../services/apiService';
 
 interface ExamsScreenProps {
   onNavigate: (path: string) => void;
@@ -11,20 +11,47 @@ interface ExamsScreenProps {
 
 export const ExamsScreen: React.FC<ExamsScreenProps> = ({ onNavigate }) => {
   const [activeTab, setActiveTab] = useState<'upcoming' | 'history'>('upcoming');
+  const [exams, setExams] = useState<Exam[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   
   // User Data
-  const user: User = {
-    id: '1',
-    name: 'Arka Maulana',
-    email: 'arka.m@university.edu',
+  const user = authAPI.getUser() || {
+    id: '0',
+    name: 'Student',
+    email: 'student@example.com',
   };
 
-  const exams: Exam[] = [
-    { id: 'e1', title: 'Frontend Engineering Certification', date: new Date(), durationMinutes: 60, status: 'Scheduled' },
-    { id: 'e2', title: 'Data Structures & Algorithms', date: new Date(Date.now() + 86400000 * 2), durationMinutes: 120, status: 'Scheduled' },
-    { id: 'e3', title: 'System Design Fundamentals', date: new Date(Date.now() + 86400000 * 5), durationMinutes: 90, status: 'Scheduled' },
-    { id: 'e4', title: 'Database Management Systems', date: new Date(Date.now() - 86400000 * 10), durationMinutes: 60, status: 'Completed' },
-  ];
+  useEffect(() => {
+    const fetchExams = async () => {
+      try {
+        setLoading(true);
+        // Get exams specifically for this student
+        const data = await examsAPI.getMyExams();
+        
+        // Transform backend data to frontend Exam type
+        const transformedExams: Exam[] = data.map((item: any) => ({
+          id: item.id.toString(),
+          title: item.title,
+          date: item.start_time,
+          durationMinutes: item.duration_minutes,
+          status: item.status === 'completed' ? 'Completed' : 'Scheduled', // Simple logic for list view
+          courseName: item.course_name,
+          enrollmentId: item.enrollment_id?.toString(),
+          questionCount: item.question_count,
+        }));
+        
+        setExams(transformedExams);
+      } catch (err: any) {
+        console.error('Failed to fetch exams:', err);
+        setError(err.message || 'Failed to load examinations');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchExams();
+  }, []);
 
   const displayedExams = exams.filter(e => 
     activeTab === 'upcoming' ? e.status === 'Scheduled' : e.status === 'Completed'
@@ -32,7 +59,7 @@ export const ExamsScreen: React.FC<ExamsScreenProps> = ({ onNavigate }) => {
 
   return (
     <DashboardLayout currentUser={user} onNavigate={onNavigate} currentPath="/exams">
-      <div className="animate-slide-up pb-12 max-w-7xl mx-auto">
+      <div className="animate-slide-up pb-12 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
         
         {/* Header */}
         <div className="mb-8 flex flex-col md:flex-row md:items-end justify-between gap-4">
@@ -82,7 +109,24 @@ export const ExamsScreen: React.FC<ExamsScreenProps> = ({ onNavigate }) => {
         </div>
 
         {/* Exams Grid */}
-        {displayedExams.length > 0 ? (
+        {loading ? (
+            <div className="text-center py-20 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                <Loader2 className="w-8 h-8 text-indigo-500 animate-spin mx-auto mb-4" />
+                <p className="text-slate-500 text-sm">Fetching your examinations...</p>
+            </div>
+        ) : error ? (
+            <div className="text-center py-20 bg-red-50 rounded-2xl border border-dashed border-red-200">
+                <AlertCircle className="w-8 h-8 text-red-500 mx-auto mb-4" />
+                <h3 className="text-lg font-bold text-red-900 mb-1">Failed to load exams</h3>
+                <p className="text-red-600 text-sm">{error}</p>
+                <button 
+                  onClick={() => window.location.reload()}
+                  className="mt-4 px-4 py-2 bg-red-100 text-red-700 rounded-lg text-xs font-bold hover:bg-red-200 transition-colors"
+                >
+                  Retry
+                </button>
+            </div>
+        ) : displayedExams.length > 0 ? (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
                 {displayedExams.map(exam => (
                     <div key={exam.id} className="transform hover:-translate-y-1 transition-transform duration-300">
@@ -117,4 +161,4 @@ export const ExamsScreen: React.FC<ExamsScreenProps> = ({ onNavigate }) => {
       </div>
     </DashboardLayout>
   );
-};
+};

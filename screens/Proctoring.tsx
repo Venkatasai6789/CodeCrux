@@ -1,35 +1,89 @@
-
-import React, { useState, useEffect } from 'react';
-import { Shield, CheckCircle, AlertTriangle, Monitor, CreditCard, Mic, ChevronDown, Wifi, Camera } from 'lucide-react';
-import { CameraPreview } from '../components/Proctoring/CameraPreview';
+import React, { useState, useEffect, useRef } from 'react';
+import { Shield, CheckCircle, AlertTriangle, Monitor, CreditCard, Mic, ChevronDown, Wifi, Camera, Loader2, Image as ImageIcon } from 'lucide-react';
+import { CameraPreview, CameraHandle } from '../components/Proctoring/CameraPreview';
 import { Button } from '../components/ui/Button';
 import { SystemCheckItem } from '../types';
+import { examsAPI } from '../services/apiService';
 
 interface ProctoringScreenProps {
   onNavigate: (path: string) => void;
 }
 
 export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }) => {
+  const [examId, setExamId] = useState<string | null>(null);
+  const [examDetails, setExamDetails] = useState<any>(null);
+  const [enrollment, setEnrollment] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  
   const [permissionGranted, setPermissionGranted] = useState(false);
   const [faceDetected, setFaceDetected] = useState(false);
   const [isMobile, setIsMobile] = useState(false);
   
-  // New verification states
+  // Verification states
   const [idCaptured, setIdCaptured] = useState(false);
-  const [screenShared, setScreenShared] = useState(false);
+  const [capturedImage, setCapturedImage] = useState<string | null>(null);
   const [micActive, setMicActive] = useState(false);
+  const cameraRef = useRef<CameraHandle>(null);
 
   // Guidelines State
   const [openSection, setOpenSection] = useState<string>('key-instructions');
 
-  // Checklist State
+  // Checklist State (Removed Screen Share)
   const [checks, setChecks] = useState<SystemCheckItem[]>([
     { id: '1', label: 'Camera & Face', status: 'checking', value: 'Checking...', tip: 'Ensure your face is centered.' },
     { id: '2', label: 'Microphone', status: 'checking', value: 'Checking...', tip: 'Speak to test audio levels.' },
     { id: '3', label: 'Internet Speed', status: 'checking', value: 'Checking...', tip: 'Testing connection stability.' },
-    { id: '4', label: 'Screen Share', status: 'checking', value: 'Waiting...', tip: 'Required to monitor tab switching.' },
     { id: '5', label: 'ID Verification', status: 'checking', value: 'Waiting...', tip: 'Place ID card in front of camera.' },
   ]);
+
+  // Parse examId from hash
+  useEffect(() => {
+    const hash = window.location.hash;
+    const params = new URLSearchParams(hash.split('?')[1]);
+    const id = params.get('examId');
+    setExamId(id);
+  }, []);
+
+  // Fetch Exam Data
+  useEffect(() => {
+    if (!examId) return;
+
+    const fetchData = async () => {
+      try {
+        setLoading(true);
+        const hash = window.location.hash;
+        const params = new URLSearchParams(hash.split('?')[1]);
+        const urlEnrollmentId = params.get('enrollmentId');
+
+        const myExams = await examsAPI.getMyExams();
+        const examMatch = myExams.find((e: any) => e.id.toString() === examId);
+        
+        if (examMatch) {
+          setExamDetails(examMatch);
+          const eId = urlEnrollmentId || examMatch.enrollment_id;
+          if (eId) {
+            setEnrollment({ id: eId });
+          }
+        } else {
+          const details = await examsAPI.listExams();
+          const specific = details.find((e: any) => e.id.toString() === examId);
+          if (specific) {
+              setExamDetails(specific);
+              if (specific.enrollment_id) setEnrollment({ id: specific.enrollment_id });
+          } else {
+              const basic = await examsAPI.getExam(examId);
+              setExamDetails(basic);
+          }
+        }
+      } catch (err) {
+        console.error('Failed to fetch exam details:', err);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchData();
+  }, [examId]);
 
   // Check for Mobile
   useEffect(() => {
@@ -57,7 +111,7 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
 
     // 3. Network (Simulated)
     setTimeout(() => {
-        updateCheck('3', 'pass', '24 Mbps');
+        updateCheck('3', 'pass', 'Good (24 Mbps)');
     }, 3500);
 
   }, [permissionGranted]);
@@ -67,21 +121,26 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
   };
 
   const handleCaptureID = () => {
-      const btn = document.getElementById('capture-btn');
-      if(btn) btn.innerText = "Capturing...";
+      if (!cameraRef.current) return;
       
-      setTimeout(() => {
+      const screenshot = cameraRef.current.takeScreenshot();
+      if (screenshot) {
+          setCapturedImage(screenshot);
           setIdCaptured(true);
           updateCheck('5', 'pass', 'Captured');
-      }, 1500);
-  };
-
-  const handleShareScreen = () => {
-      setScreenShared(true);
-      updateCheck('4', 'pass', 'Sharing');
+      }
   };
 
   const allPassed = checks.every(c => c.status === 'pass');
+
+  const startAssessment = () => {
+    if (!enrollment?.id) {
+        // Safe navigation with fallback if enrollment still missing
+        onNavigate(`/live-exam?examId=${examId}&enrollmentId=manual_${Date.now()}`);
+        return;
+    }
+    onNavigate(`/live-exam?examId=${examId}&enrollmentId=${enrollment.id}`);
+  };
 
   if (isMobile) {
       return (
@@ -96,6 +155,17 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
       );
   }
 
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-slate-50 flex items-center justify-center">
+        <div className="text-center">
+          <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mx-auto mb-4" />
+          <p className="text-slate-600 font-medium">Loading session requirements...</p>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="min-h-screen bg-[#F8FAFC] font-sans flex flex-col">
       {/* Header */}
@@ -105,7 +175,8 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
               <span className="font-bold text-slate-800">Secure Assessment Environment</span>
           </div>
           <div className="text-xs font-medium text-slate-500">
-              Session ID: <span className="font-mono text-slate-700">8X92-2291</span>
+              Exam ID: <span className="font-mono text-slate-700">{examId}</span>
+              {enrollment && <span className="ml-4 opacity-50">| Enrollment: {enrollment.id}</span>}
           </div>
       </header>
 
@@ -118,15 +189,16 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
                 {/* Welcome / Status */}
                 <div className="text-center mb-8">
                     <div className="inline-flex items-center gap-2 px-3 py-1 bg-indigo-50 text-indigo-700 rounded-full text-xs font-bold uppercase tracking-wider mb-3">
-                        Round 1
+                        Verification Phase
                     </div>
-                    <h1 className="text-3xl font-bold text-slate-900 mb-2">Frontend Engineering Certification</h1>
+                    <h1 className="text-3xl font-bold text-slate-900 mb-2">{examDetails?.title || 'Examination'}</h1>
                     <p className="text-slate-500">Please complete the system verification to unlock the exam.</p>
                 </div>
 
                 {/* Camera Feed */}
                 <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-200">
                     <CameraPreview 
+                        ref={cameraRef}
                         permissionGranted={permissionGranted}
                         onPermissionGranted={() => setPermissionGranted(true)}
                         faceDetected={faceDetected}
@@ -135,40 +207,43 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
 
                 {/* Action Buttons */}
                 {permissionGranted && (
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <button 
-                            id="capture-btn"
+                            id="capture-id-btn"
                             onClick={handleCaptureID}
-                            disabled={idCaptured}
-                            className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${idCaptured ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 text-slate-600'}`}
+                            className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${idCaptured ? 'bg-emerald-50 border-emerald-500 ring-2 ring-emerald-500/20 text-emerald-700' : 'bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 text-slate-600'}`}
                         >
                             <div className={`p-2 rounded-full ${idCaptured ? 'bg-emerald-100' : 'bg-slate-100'}`}>
                                 {idCaptured ? <CheckCircle className="w-5 h-5" /> : <CreditCard className="w-5 h-5" />}
                             </div>
                             <span className="text-sm font-bold">{idCaptured ? 'ID Verified' : 'Capture ID Card'}</span>
-                            <span className="text-[10px] text-slate-400 font-medium">Place ID near camera</span>
+                            <span className="text-[10px] text-slate-400 font-medium">Place ID near camera & click</span>
                         </button>
 
-                        <button 
-                            onClick={handleShareScreen}
-                            disabled={screenShared}
-                            className={`p-4 rounded-xl border-2 flex flex-col items-center justify-center gap-2 transition-all ${screenShared ? 'bg-emerald-50 border-emerald-200 text-emerald-700' : 'bg-white border-slate-200 hover:border-indigo-500 hover:bg-indigo-50 text-slate-600'}`}
-                        >
-                            <div className={`p-2 rounded-full ${screenShared ? 'bg-emerald-100' : 'bg-slate-100'}`}>
-                                {screenShared ? <CheckCircle className="w-5 h-5" /> : <Monitor className="w-5 h-5" />}
+                        {idCaptured && capturedImage && (
+                            <div className="relative group rounded-xl overflow-hidden aspect-video border-2 border-emerald-500 shadow-lg animate-fade-in">
+                                <img src={capturedImage} alt="ID Capture" className="w-full h-full object-cover" />
+                                <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                                    <button onClick={() => {setIdCaptured(false); setCapturedImage(null); updateCheck('5', 'checking', 'Waiting...');}} className="bg-white text-slate-900 px-3 py-1.5 rounded-lg text-xs font-bold shadow-xl">Retake</button>
+                                </div>
+                                <div className="absolute top-2 right-2 bg-emerald-500 text-white p-1 rounded-full"><CheckCircle className="w-4 h-4" /></div>
                             </div>
-                            <span className="text-sm font-bold">{screenShared ? 'Screen Shared' : 'Share Screen'}</span>
-                            <span className="text-[10px] text-slate-400 font-medium">Entire screen required</span>
-                        </button>
+                        )}
+                        {!idCaptured && (
+                            <div className="rounded-xl border-2 border-dashed border-slate-200 flex flex-col items-center justify-center text-slate-400 p-4">
+                                <ImageIcon className="w-8 h-8 mb-2 opacity-50" />
+                                <span className="text-xs font-medium">No ID photo captured</span>
+                            </div>
+                        )}
                     </div>
                 )}
 
                 {/* Start Button Area */}
                 <div className="pt-4">
                     <Button 
-                        onClick={() => onNavigate('/live-exam')}
+                        onClick={startAssessment}
                         disabled={!allPassed}
-                        className={`w-full h-14 text-lg shadow-xl ${!allPassed ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.01]'}`}
+                        className={`w-full h-14 text-lg shadow-xl ${!allPassed ? 'opacity-50 cursor-not-allowed' : 'hover:scale-[1.01] bg-gradient-to-r from-indigo-600 to-indigo-700'}`}
                     >
                         {allPassed ? "Start Assessment" : "Complete Verification to Start"}
                     </Button>
@@ -190,7 +265,7 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
             <div className="space-y-4">
                 
                 {/* Section 1 */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <button 
                         onClick={() => setOpenSection(openSection === 'key-instructions' ? '' : 'key-instructions')}
                         className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
@@ -213,7 +288,7 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
                 </div>
 
                 {/* Section 2 */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <button 
                         onClick={() => setOpenSection(openSection === 'timelines' ? '' : 'timelines')}
                         className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"
@@ -224,15 +299,15 @@ export const ProctoringScreen: React.FC<ProctoringScreenProps> = ({ onNavigate }
                     
                     {openSection === 'timelines' && (
                         <div className="p-4 bg-white text-xs text-slate-600 space-y-3 border-t border-slate-200 animate-fade-in">
-                            <p>• <strong>Assessment Duration:</strong> 01:00:00 (hh:mm:ss)</p>
-                            <p>• <strong>Total Questions:</strong> 20 Questions</p>
+                            <p>• <strong>Assessment Duration:</strong> {examDetails?.duration_minutes || '--'} minutes</p>
+                            <p>• <strong>Passing Marks:</strong> {examDetails?.passing_marks || '--'} out of {examDetails?.total_marks || '--'}</p>
                             <p>• You can attempt the assessment anytime between the provided assessment window.</p>
                         </div>
                     )}
                 </div>
 
                 {/* Section 3 */}
-                <div className="border border-slate-200 rounded-xl overflow-hidden">
+                <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <button 
                         onClick={() => setOpenSection(openSection === 'proctoring' ? '' : 'proctoring')}
                         className="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors"

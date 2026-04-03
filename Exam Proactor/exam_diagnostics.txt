@@ -1,0 +1,17 @@
+--- EXAM DIAGNOSTICS ---
+Total Exams: 12
+
+ID: 12 | Title: Linear Algebra Quiz | Questions: 0 | Status: published
+ID: 11 | Title: UI/UX Portfolio Review | Questions: 5 | Status: published
+ID: 10 | Title: Biology Lab Assessment | Questions: 0 | Status: published
+ID: 9 | Title: DSA Final Exam | Questions: 2 | Status: published
+ID: 8 | Title: Python Midterm Exam | Questions: 3 | Status: published
+ID: 7 | Title: Cybersecurity 22 | Questions: 0 | Status: published
+ID: 6 | Title: Cybersecurity | Questions: 0 | Status: published
+ID: 5 | Title: java | Questions: 0 | Status: published
+ID: 4 | Title: python | Questions: 0 | Status: published
+ID: 3 | Title: python | Questions: 0 | Status: published
+ID: 2 | Title: python | Questions: 0 | Status: published
+ID: 1 | Title: python | Questions: 0 | Status: published
+
+--- END ---

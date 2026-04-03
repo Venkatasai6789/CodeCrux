@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { Button } from '../components/ui/Button';
 import { 
   Search, Filter, ChevronDown, MessageSquare, CheckCircle, 
@@ -102,7 +103,8 @@ const MOCK_MESSAGES: Message[] = [
 ];
 
 export const FacultyDisputesScreen: React.FC<FacultyDisputesProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
   
   // State
   const [selectedAppealId, setSelectedAppealId] = useState<string | null>(null);

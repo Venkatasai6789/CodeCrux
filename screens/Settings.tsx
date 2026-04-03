@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { Input } from '../components/ui/Input';
 import { Toggle } from '../components/ui/Toggle';
 import { Button } from '../components/ui/Button';
@@ -15,11 +16,12 @@ interface SettingsProps {
 }
 
 export const SettingsScreen: React.FC<SettingsProps> = ({ onNavigate }) => {
+  const { user: authUser, logout } = useAuth();
   const user: User = {
-    id: '1',
-    name: 'Arka Maulana',
-    email: 'arka.m@university.edu',
-    role: 'student'
+    id: String(authUser?.id || ''),
+    name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'User',
+    email: authUser?.email || '',
+    role: authUser?.role === 'instructor' || authUser?.role === 'admin' ? 'faculty' : 'student'
   };
 
   const [notifications, setNotifications] = useState({
@@ -178,7 +180,13 @@ export const SettingsScreen: React.FC<SettingsProps> = ({ onNavigate }) => {
                     <p className="text-sm text-red-600/80 mb-6">Irreversible actions regarding your account.</p>
                     
                     <div className="flex gap-4">
-                        <button className="px-4 py-2 bg-white border border-red-200 text-red-600 text-sm font-bold rounded-lg hover:bg-red-50 transition-colors flex items-center gap-2">
+                        <button 
+                            onClick={() => {
+                                logout();
+                                onNavigate('/login');
+                            }}
+                            className="px-4 py-2 bg-white border border-red-200 text-red-600 text-sm font-bold rounded-lg hover:bg-red-50 transition-colors flex items-center gap-2"
+                        >
                             <LogOut className="w-4 h-4" /> Sign Out
                         </button>
                     </div>

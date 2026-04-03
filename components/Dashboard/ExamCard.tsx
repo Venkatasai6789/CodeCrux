@@ -23,7 +23,10 @@ export const ExamCard: React.FC<ExamCardProps> = ({ exam }) => {
       <div className="flex justify-between items-start mb-3">
         <div>
             <h4 className="text-[16px] font-semibold text-slate-900 line-clamp-1">{exam.title}</h4>
-            <div className="flex items-center gap-2 mt-1 text-slate-500 text-xs">
+            <div className="text-xs text-indigo-600 font-medium mt-0.5 line-clamp-1">
+                {exam.courseName}
+            </div>
+            <div className="flex items-center gap-2 mt-2 text-slate-500 text-[10px]">
                 <Calendar className="w-3 h-3" />
                 <span>{new Date(exam.date).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
             </div>
@@ -38,13 +41,20 @@ export const ExamCard: React.FC<ExamCardProps> = ({ exam }) => {
             <Clock className="w-3 h-3" />
             <span>{exam.durationMinutes} mins</span>
         </div>
+        <div className="flex items-center gap-1 text-[10px] text-slate-400 border-l border-slate-200 pl-2 ml-1">
+            <AlertCircle className="w-3 h-3" />
+            <span>{exam.questionCount || 0} Questions</span>
+        </div>
       </div>
 
       <button 
-        onClick={() => window.location.hash = '/proctoring'}
+        onClick={() => {
+          const url = `/proctoring?examId=${exam.id}${exam.enrollmentId ? `&enrollmentId=${exam.enrollmentId}` : ''}`;
+          window.location.hash = url;
+        }}
         className="w-full bg-gradient-to-r from-primary to-secondary text-white text-xs font-semibold py-2 rounded-lg hover:shadow-md transition-all active:scale-[0.98]"
       >
-        Prepare Now
+        Start Exam
       </button>
     </div>
   );

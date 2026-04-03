@@ -1,93 +1,54 @@
-import React from 'react';
-import { ExamResult } from '../types';
+import React, { useEffect, useState } from 'react';
 import { ResultsScoreRing } from '../components/Exam/ResultsScoreRing';
 import { ProctoringReport } from '../components/Exam/ProctoringReport';
 import { QuestionReviewAccordion } from '../components/Exam/QuestionReviewAccordion';
-import { Button } from '../components/ui/Button';
-import { Download, ArrowRight, CheckCircle, Clock, BarChart } from 'lucide-react';
+import { Download, ArrowRight, CheckCircle, Clock, BarChart, Loader2 } from 'lucide-react';
 
 interface ExamResultsProps {
   onNavigate: (path: string) => void;
 }
 
 export const ExamResultsScreen: React.FC<ExamResultsProps> = ({ onNavigate }) => {
-  // Mock Data
-  const result: ExamResult = {
-    id: 'res-1',
-    examTitle: 'Advanced Machine Learning Final',
-    completedAt: new Date(),
-    score: 87,
-    totalQuestions: 100,
-    correctAnswers: 87,
-    timeSpent: '45m 32s',
-    difficulty: 'Intermediate',
-    status: 'passed',
-    questions: [
-      {
-        id: 'q1',
-        text: 'Which algorithm is best suited for classification problems with high dimensionality?',
-        userAnswerId: 'o1',
-        correctAnswerId: 'o1',
-        options: [
-          { id: 'o1', text: 'Support Vector Machines (SVM)' },
-          { id: 'o2', text: 'K-Means Clustering' },
-          { id: 'o3', text: 'Linear Regression' },
-        ],
-        explanation: 'SVMs are effective in high-dimensional spaces because they find the optimal hyperplane that separates classes with the maximum margin.'
-      },
-      {
-        id: 'q2',
-        text: 'What is the primary purpose of regularization in machine learning?',
-        userAnswerId: 'o2',
-        correctAnswerId: 'o1',
-        options: [
-          { id: 'o1', text: 'To prevent overfitting' },
-          { id: 'o2', text: 'To increase model complexity' },
-          { id: 'o3', text: 'To speed up training' },
-        ],
-        explanation: 'Regularization adds a penalty term to the loss function to discourage complex models, thus reducing overfitting.'
-      },
-      {
-        id: 'q3',
-        text: 'In a neural network, what does the activation function do?',
-        userAnswerId: 'o3',
-        correctAnswerId: 'o3',
-        options: [
-            { id: 'o1', text: 'Initializes weights' },
-            { id: 'o2', text: 'Calculates the loss' },
-            { id: 'o3', text: 'Introduces non-linearity' },
-        ],
-        explanation: 'Without activation functions, a neural network would simply be a linear regression model. Activation functions introduce non-linearity, allowing the network to learn complex patterns.'
-      }
-    ],
-    proctoring: {
-      attentionScore: 89,
-      checks: {
-        faceDetected: true,
-        idVerified: true,
-        phoneDetected: false,
-        multiplePeople: false,
-        webcamActive: true,
-        screenSharing: true,
-      },
-      timelineData: [
-        { time: 0, score: 100 },
-        { time: 5, score: 98 },
-        { time: 10, score: 95 },
-        { time: 15, score: 90 }, // Dip
-        { time: 20, score: 92 },
-        { time: 25, score: 85 }, // Dip
-        { time: 30, score: 88 },
-        { time: 35, score: 95 },
-        { time: 40, score: 96 },
-        { time: 45, score: 98 },
-      ],
-      incidents: [
-        { id: 'i1', timeLabel: '15:20', timestamp: 15, type: 'Gaze Aversion', severity: 'low' },
-        { id: 'i2', timeLabel: '25:10', timestamp: 25, type: 'Background Noise', severity: 'medium' },
-      ]
+  const [result, setResult] = useState<any>(null);
+
+  useEffect(() => {
+    // Try to get result from global state or localStorage
+    const savedResult = (window as any).lastExamResult || JSON.parse(localStorage.getItem('last_exam_result') || 'null');
+    
+    if (savedResult) {
+      setResult(savedResult);
+    } else {
+      // Fallback to minimal mock if nothing found (should not happen in real flow)
+      setResult({
+        examTitle: 'Assessment Completed',
+        completedAt: new Date().toISOString(),
+        score: 0,
+        totalQuestions: 0,
+        correctAnswers: 0,
+        timeSpent: 'N/A',
+        difficulty: 'Stable',
+        status: 'completed',
+        questions: [],
+        proctoring: {
+          attentionScore: 100,
+          checks: { faceDetected: true, idVerified: true },
+          timelineData: [],
+          incidents: []
+        }
+      });
     }
-  };
+  }, []);
+
+  if (!result) {
+    return (
+      <div className="h-screen flex flex-col items-center justify-center bg-white">
+        <Loader2 className="w-10 h-10 text-indigo-600 animate-spin mb-4" />
+        <h2 className="text-xl font-bold text-slate-800">Generating Report...</h2>
+      </div>
+    );
+  }
+
+  const completedDate = new Date(result.completedAt);
 
   return (
     <div className="min-h-screen bg-[#F8FAFC] p-4 md:p-8 font-sans">
@@ -95,59 +56,70 @@ export const ExamResultsScreen: React.FC<ExamResultsProps> = ({ onNavigate }) =>
         
         {/* Header */}
         <div className="mb-8">
-            <h1 className="text-[28px] font-bold text-slate-900 mb-1">Exam Completed</h1>
+            <h1 className="text-[28px] font-bold text-slate-900 mb-1">Exam Summary</h1>
             <p className="text-[12px] text-slate-500">
-                Completed on {result.completedAt.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })} at {result.completedAt.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}
+                Course: <span className="text-indigo-600 font-bold">{result.examTitle}</span> • Completed on {completedDate.toLocaleDateString()} at {completedDate.toLocaleTimeString()}
             </p>
         </div>
 
-        {/* Main Results Card */}
-        <div className="bg-white rounded-[12px] border border-slate-200 shadow-[0_4px_6px_rgba(0,0,0,0.05)] p-8">
-            
-            {/* Score Ring */}
-            <div className="flex justify-center mb-8">
-                <ResultsScoreRing score={result.score} status={result.status} />
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {/* Left: Main Score */}
+            <div className="lg:col-span-2 space-y-6">
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-8">
+                    <div className="flex flex-col md:flex-row items-center gap-12">
+                        <ResultsScoreRing score={result.score} status={result.score >= 40 ? 'passed' : 'failed'} />
+                        
+                        <div className="flex-1 grid grid-cols-1 gap-6 w-full">
+                            <StatBox 
+                                icon={CheckCircle} 
+                                color="text-emerald-500" 
+                                value={`${result.correctAnswers}/${result.totalQuestions}`} 
+                                label="Questions Correct" 
+                            />
+                            <StatBox 
+                                icon={Clock} 
+                                color="text-indigo-500" 
+                                value={result.timeSpent} 
+                                label="Total Time Taken" 
+                            />
+                        </div>
+                    </div>
+                </div>
+
+                {/* Review Section */}
+                <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                    <div className="px-6 py-4 border-b border-slate-100 bg-slate-50/50 flex items-center justify-between">
+                         <h3 className="font-bold text-slate-800 text-sm italic">Question Breakdown</h3>
+                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Review your performance</span>
+                    </div>
+                    <QuestionReviewAccordion questions={result.questions} />
+                </div>
             </div>
 
-            {/* Breakdown Stats */}
-            <div className="pt-8 border-t border-slate-100 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <StatBox 
-                    icon={CheckCircle} 
-                    color="text-success" 
-                    value={`${result.correctAnswers}/${result.totalQuestions}`} 
-                    label="Correct Answers" 
-                />
-                <StatBox 
-                    icon={Clock} 
-                    color="text-primary" 
-                    value={result.timeSpent} 
-                    label="Time Spent" 
-                />
-                <StatBox 
-                    icon={BarChart} 
-                    color="text-secondary" 
-                    value={result.difficulty} 
-                    label="Difficulty Rating" 
-                />
+            {/* Right: Proctoring Insights */}
+            <div className="space-y-6">
+                <ProctoringReport session={result.proctoring} />
+                
+                <div className="bg-indigo-900 text-white p-6 rounded-2xl shadow-xl relative overflow-hidden group">
+                    <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:scale-110 transition-transform">
+                        <BarChart className="w-16 h-16" />
+                    </div>
+                    <h4 className="font-bold mb-2">Certificate of Integrity</h4>
+                    <p className="text-[11px] text-indigo-200 leading-relaxed mb-4">
+                        This exam was completed under secure proctoring conditions. A digital certificate is now available for download.
+                    </p>
+                    <button className="w-full bg-white text-indigo-900 py-2.5 rounded-xl font-bold text-xs hover:bg-indigo-50 transition-colors flex items-center justify-center gap-2">
+                        <Download className="w-4 h-4" /> Download Certificate
+                    </button>
+                </div>
+
+                <button 
+                  onClick={() => onNavigate('/dashboard')}
+                  className="w-full bg-white border border-slate-200 text-slate-600 py-4 rounded-2xl font-bold text-sm hover:bg-slate-50 transition-all flex items-center justify-center gap-2 shadow-sm"
+                >
+                    Return to Dashboard <ArrowRight className="w-4 h-4" />
+                </button>
             </div>
-        </div>
-
-        {/* Proctoring Report */}
-        <ProctoringReport session={result.proctoring} />
-
-        {/* Question Review */}
-        <QuestionReviewAccordion questions={result.questions} />
-
-        {/* Bottom Actions */}
-        <div className="mt-8 pt-8 border-t border-slate-200 flex flex-col sm:flex-row gap-4 justify-between items-center">
-            <Button variant="secondary" className="w-full sm:w-auto px-6">
-                <Download className="w-4 h-4 mr-2" />
-                Download Report
-            </Button>
-            <Button variant="primary" onClick={() => onNavigate('/dashboard')} className="w-full sm:w-auto px-6">
-                Return to Dashboard
-                <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
         </div>
 
       </div>
@@ -156,13 +128,13 @@ export const ExamResultsScreen: React.FC<ExamResultsProps> = ({ onNavigate }) =>
 };
 
 const StatBox = ({ icon: Icon, color, value, label }: { icon: any, color: string, value: string, label: string }) => (
-    <div className="flex items-center gap-4 p-4 rounded-lg hover:bg-slate-50 transition-colors">
-        <div className={`p-3 rounded-full bg-white border border-slate-100 shadow-sm ${color}`}>
-            <Icon className="w-6 h-6" />
+    <div className="flex items-center gap-4 p-4 rounded-xl bg-slate-50/50 border border-slate-100">
+        <div className={`p-3 rounded-xl bg-white shadow-sm ${color}`}>
+            <Icon className="w-5 h-5" />
         </div>
         <div>
-            <p className={`text-[20px] font-bold text-slate-800`}>{value}</p>
-            <p className="text-[12px] text-slate-400">{label}</p>
+            <p className="text-[18px] font-bold text-slate-800 leading-none mb-1">{value}</p>
+            <p className="text-[11px] font-medium text-slate-400 uppercase tracking-wider">{label}</p>
         </div>
     </div>
 );

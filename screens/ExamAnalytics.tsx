@@ -2,6 +2,7 @@
 import React, { useState } from 'react';
 import { DashboardLayout } from '../components/Layout/DashboardLayout';
 import { User } from '../types';
+import { useAuth } from '../services/authContext';
 import { 
   Download, Calendar, ChevronDown, Users, Clock, Award, 
   CheckCircle, AlertTriangle, Search, Filter, MoreHorizontal,
@@ -63,7 +64,8 @@ const EXAM_DATA = {
 };
 
 export const ExamAnalyticsScreen: React.FC<ExamAnalyticsProps> = ({ onNavigate }) => {
-  const facultyUser: User = { id: 'f1', name: 'Professor Smith', email: 'admin@sparkless.com', role: 'faculty' };
+  const { user: authUser } = useAuth();
+  const facultyUser: User = { id: String(authUser?.id || ''), name: authUser ? `${authUser.first_name} ${authUser.last_name}`.trim() || authUser.username : 'Faculty', email: authUser?.email || '', role: 'faculty' };
   const [timeFilter, setTimeFilter] = useState('Last 30 days');
 
   return (

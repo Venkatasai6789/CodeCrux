@@ -42,6 +42,8 @@ export interface Exam {
   status: 'Draft' | 'Scheduled' | 'Live' | 'Completed';
   totalStudents?: number;
   type?: 'Mixed' | 'Coding' | 'MCQ';
+  enrollmentId?: string;
+  questionCount?: number;
 }
 
 export interface TestCase {

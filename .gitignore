@@ -22,3 +22,33 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Project specific
+.env
+.env.*
+!.env.example
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Django specific
+db.sqlite3
+db.sqlite3-journal
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+media/
+static/
+staticfiles/
+venv/
+.venv/
+env/
+.env/
+
+# AI Studio / Agent
+.agent/
+.gemini/
+*.tmp
+temp/
