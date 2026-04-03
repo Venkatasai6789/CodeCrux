@@ -29,8 +29,12 @@ export const ProctoringReport: React.FC<ProctoringReportProps> = ({ session }) =
   };
 
   const getXForTime = (time: number) => {
-    const maxTime = Math.max(...timelineData.map(d => d.time));
-    return (time / maxTime) * (chartWidth - padding * 2) + padding;
+    if (timelineData.length < 2) return padding;
+    const times = timelineData.map(d => d.time);
+    const maxTime = Math.max(...times) || 1;
+    const minTime = Math.min(...times);
+    const range = maxTime - minTime || 1;
+    return ((time - minTime) / range) * (chartWidth - padding * 2) + padding;
   };
 
   const getYForScore = (score: number) => {
@@ -128,7 +132,7 @@ export const ProctoringReport: React.FC<ProctoringReportProps> = ({ session }) =
         </div>
 
         {/* Security Metrics Grid */}
-        <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-2 md:grid-cols-3 gap-4">
+        <div className="mt-8 pt-6 border-t border-slate-100 grid grid-cols-2 lg:grid-cols-3 gap-3 md:gap-4">
              <MetricCheck label="Face Detection" status={checks.faceDetected} icon={ShieldCheck} passedLabel="Verified" />
              <MetricCheck label="Identity Verified" status={checks.idVerified} icon={Eye} passedLabel="Confirmed" />
              <MetricCheck label="Phone Detection" status={checks.phoneDetected} icon={Smartphone} passedLabel="None Detected" />
@@ -136,6 +140,40 @@ export const ProctoringReport: React.FC<ProctoringReportProps> = ({ session }) =
              <MetricCheck label="Webcam Active" status={checks.webcamActive} icon={Video} passedLabel="Throughout Exam" />
              <MetricCheck label="Screen Recording" status={checks.screenSharing} icon={Monitor} passedLabel="Enabled" />
         </div>
+
+        {/* Snapshot Evidence Gallery */}
+        {incidents.some(i => i.snapshot) && (
+            <div className="mt-8 pt-6 border-t border-slate-100">
+                <h4 className="text-[14px] font-bold text-slate-800 mb-4 flex items-center gap-2">
+                    <Monitor className="w-4 h-4 text-indigo-500" />
+                    Incident Evidence Log
+                </h4>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {incidents.filter(i => i.snapshot).map((incident) => (
+                        <div key={incident.id} className="group relative bg-slate-50 rounded-xl border border-slate-200 overflow-hidden hover:border-red-300 transition-colors">
+                            <div className="aspect-video bg-black relative">
+                                <img 
+                                    src={incident.snapshot} 
+                                    alt={incident.type} 
+                                    className="w-full h-full object-cover opacity-90 group-hover:opacity-100 transition-opacity"
+                                />
+                                <div className="absolute top-2 left-2 px-2 py-1 bg-red-600 text-white text-[8px] font-bold rounded uppercase tracking-wider">
+                                    {incident.type}
+                                </div>
+                                <div className="absolute bottom-2 right-2 px-2 py-1 bg-black/60 text-white text-[8px] font-mono rounded">
+                                    {incident.timeLabel}
+                                </div>
+                            </div>
+                            <div className="p-3">
+                                <p className="text-[10px] font-medium text-slate-900 line-clamp-2 leading-relaxed">
+                                    {incident.description || `Violation detected: ${incident.type}`}
+                                </p>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+        )}
       </div>
     </div>
   );
@@ -165,17 +203,17 @@ const MetricCheck = ({ label, status, icon: Icon, passedLabel }: { label: string
     }
 
     return (
-        <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg border border-slate-100">
-            <div className={`p-2 rounded-full ${isSuccess ? 'bg-green-100 text-success' : 'bg-red-100 text-error'}`}>
+        <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-xl border border-slate-100 min-w-0">
+            <div className={`p-2.5 rounded-xl shrink-0 ${isSuccess ? 'bg-emerald-100 text-emerald-600' : 'bg-red-100 text-red-600'}`}>
                 <Icon className="w-4 h-4" />
             </div>
-            <div>
-                <p className="text-[12px] font-medium text-slate-900">{label}</p>
-                <div className="flex items-center gap-1">
-                    <p className={`text-[10px] font-bold ${isSuccess ? 'text-success' : 'text-error'}`}>
-                        {isSuccess ? passedLabel : 'Violation Detected'}
+            <div className="min-w-0 flex-1">
+                <p className="text-[11px] font-bold text-slate-900 truncate leading-tight mb-0.5">{label}</p>
+                <div className="flex items-center gap-1.5">
+                    <p className={`text-[9px] font-black uppercase tracking-tighter ${isSuccess ? 'text-emerald-600' : 'text-red-600'}`}>
+                        {isSuccess ? passedLabel : 'Detected'}
                     </p>
-                    {isSuccess ? <CheckCircle2 className="w-3 h-3 text-success" /> : <AlertTriangle className="w-3 h-3 text-error" />}
+                    {isSuccess ? <CheckCircle2 className="w-2.5 h-2.5 text-emerald-500" /> : <AlertTriangle className="w-2.5 h-2.5 text-red-500" />}
                 </div>
             </div>
         </div>

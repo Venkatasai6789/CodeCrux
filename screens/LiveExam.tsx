@@ -273,20 +273,19 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
           const examDuration = (examDetails?.duration_minutes || 60) * 60;
           const timeElapsed = examDuration - timeLeft;
           
-          // Call new backend submission with answers and time
-          const response = await examsAPI.submitExam(examId!, answers, timeElapsed);
-          const resultData = response.result;
-
-          // Process violation incidents for display if needed specifically or just use backend response
-          // 5. Build Final Result for Display
+          // 5. Build Final Result for Display (Local first so we have it if API fails)
           const finalResult = {
-              ...resultData,
+              examTitle: examDetails?.title || 'Exam Result',
+              score: 0, // Will be updated if API succeeds
+              totalQuestions: questions.length,
+              correctAnswers: 0, // Will be updated if API succeeds
+              timeSpent: `${Math.floor(timeElapsed / 60)}m ${timeElapsed % 60}s`,
               completedAt: new Date().toISOString(),
               questions: questions.map(q => ({
                   id: q.id,
                   text: q.text,
                   userAnswerId: answers[q.id],
-                  correctAnswerId: q.mcq_details?.options.find((o:any)=>o.is_correct)?.id.toString() || 'solution',
+                  correctAnswerId: 'unknown', // Updated if API succeeds
                   options: (q.mcq_details?.options || []).map((o: any) => ({ id: o.id.toString(), text: o.option_text, isCorrect: o.is_correct })),
                   explanation: q.type === 'mcq' ? 'Subject knowledge assessment.' : 'Algorithmic efficiency assessment.'
               })),
@@ -300,7 +299,6 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
                       webcamActive: true,
                       screenSharing: true
                   },
-                  // Generate realistic timeline based on actual duration and incidents
                   timelineData: Array.from({length: 12}, (_, i) => {
                       const time = Math.round((timeElapsed / (60 * 11)) * i);
                       const hasIncidentsNear = incidentLog.some(inc => 
@@ -316,16 +314,35 @@ export const LiveExamScreen: React.FC<LiveExamScreenProps> = ({ onNavigate }) =>
                       severity: i.severity,
                       snapshot: i.snapshot,
                       description: i.details,
-                      timestamp: Math.round((now - i.timestamp) / 1000) // seconds ago relative to finish
+                      timestamp: Math.round((now - i.timestamp) / 1000) 
                   }))
               }
           };
 
-          localStorage.setItem('last_exam_result', JSON.stringify(finalResult));
-          (window as any).lastExamResult = finalResult;
+          try {
+              const response = await examsAPI.submitExam(examId!, answers, timeElapsed);
+              const resultData = response.result;
+              
+              // Update with real backend data
+              const serverResult = {
+                  ...finalResult,
+                  ...resultData,
+                  score: resultData.score,
+                  correctAnswers: resultData.correctAnswers,
+                  status: resultData.status
+              };
+
+              localStorage.setItem('last_exam_result', JSON.stringify(serverResult));
+              (window as any).lastExamResult = serverResult;
+          } catch (err) {
+              console.error('API Submission failed, displaying local data:', err);
+              localStorage.setItem('last_exam_result', JSON.stringify(finalResult));
+              (window as any).lastExamResult = finalResult;
+          }
+          
           onNavigate('/exam-results');
       } catch (err) { 
-          console.error('Submission failed:', err);
+          console.error('Critical failure in handleFinishExam:', err);
           onNavigate('/exam-results'); 
       }
   };

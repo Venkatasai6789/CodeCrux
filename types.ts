@@ -220,4 +220,6 @@ export interface ProctoringIncident {
   timestamp: number; // relative minute for chart placement
   type: string;
   severity: 'low' | 'medium' | 'high';
+  snapshot?: string;
+  description?: string;
 }
